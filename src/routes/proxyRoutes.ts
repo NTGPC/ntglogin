@@ -8,6 +8,7 @@ router.get('/:id', proxyController.getById);
 router.post('/', proxyController.create);
 router.put('/:id', proxyController.update);
 router.delete('/:id', proxyController.remove);
+router.post('/:id/check', proxyController.check);
 
 export default router;
 

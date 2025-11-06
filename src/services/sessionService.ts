@@ -36,19 +36,38 @@ export const createSession = async (data: {
   }
 
   let proxy = null;
+  let validProxyId: number | null = null;
+  
   if (data.proxy_id) {
     proxy = await prisma.proxy.findUnique({
       where: { id: data.proxy_id },
     });
+    if (proxy) {
+      validProxyId = data.proxy_id;
+    } else {
+      console.warn(`[Session] Proxy ID ${data.proxy_id} not found, creating session without proxy`);
+    }
   }
 
-  // Create session
+  // Create session - only include proxy_id if it's valid
+  const sessionData: any = {
+    profile_id: data.profile_id,
+    status: data.status || 'running',
+    started_at: new Date(),
+  };
+  
+  // Only set proxy_id if we have a valid proxy
+  if (validProxyId !== null) {
+    sessionData.proxy_id = validProxyId;
+  }
+  
+  // Include meta if provided
+  if (data.meta) {
+    sessionData.meta = data.meta;
+  }
+
   const session = await prisma.session.create({
-    data: {
-      ...data,
-      status: data.status || 'running',
-      started_at: new Date(),
-    },
+    data: sessionData,
     include: {
       profile: true,
       proxy: true,

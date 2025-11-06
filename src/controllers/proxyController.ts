@@ -77,3 +77,9 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+export const check = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const result = await proxyService.checkProxyLive(id);
+  res.json({ success: true, data: result });
+});
+

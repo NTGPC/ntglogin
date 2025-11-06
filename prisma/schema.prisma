@@ -31,6 +31,25 @@ model Profile {
   fingerprintId Int?
   fingerprintRef Fingerprint? @relation(fields: [fingerprintId], references: [id])
   created_at  DateTime  @default(now())
+
+  // Extended fingerprint/config fields (all optional for backward compatibility)
+  userAgent        String?   @unique
+  osName           String?
+  osArch           String?   // "x86" | "x64"
+  browserVersion   Int?
+  screenWidth      Int?
+  screenHeight     Int?
+  canvasMode       String?
+  clientRectsMode  String?
+  audioCtxMode     String?
+  webglImageMode   String?
+  webglMetaMode    String?
+  geoEnabled       Boolean?
+  webrtcMainIP     Boolean?
+  proxyRefId       String?
+  proxyManual      Json?
+  macAddress       String?   @unique
+  fingerprintJson  Json?
   
   sessions    Session[]
   executions  JobExecution[]
@@ -175,4 +194,23 @@ model WorkflowAssignment {
   workflow   Workflow @relation(fields: [workflowId], references: [id])
 
   @@unique([profileId, workflowId])
+}
+
+// Changelog model - lưu trữ lịch sử thay đổi của project
+model Changelog {
+  id          Int      @id @default(autoincrement())
+  version     String   // Version number (e.g., "1.0.0", "Unreleased")
+  title       String   // Title of the change
+  type        String   // "Added" | "Changed" | "Fixed" | "Removed" | "Security"
+  category    String?  // Category (e.g., "Fingerprint", "Profile", "Proxy")
+  description String?  // Detailed description
+  files       Json?    // List of files changed
+  author      String?  // Author of the change
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@map("changelogs")
+  @@index([version])
+  @@index([type])
+  @@index([created_at])
 }

@@ -84,6 +84,12 @@ export interface Proxy {
   created_at: string
 }
 
+export interface ProxyCheckResult {
+  live: boolean
+  latencyMs?: number | null
+  error?: string
+}
+
 export interface Session {
   id: number
   profile_id: number
@@ -228,6 +234,22 @@ export const api = {
 
   async deleteProxy(id: number): Promise<void> {
     await apiClient.delete(`/api/proxies/${id}`)
+  },
+
+  async checkProxy(id: number): Promise<ProxyCheckResult> {
+    const response = await apiClient.post(`/api/proxies/${id}/check`)
+    return response.data.data || response.data
+  },
+
+  // Profiles helpers (new)
+  async getUserAgent(params?: { browser?: string; versionHint?: number; os?: string }): Promise<string> {
+    const response = await apiClient.post('/api/profiles/user-agent', params || {})
+    return response.data.userAgent || response.data.data || response.data
+  },
+
+  async generateFingerprint(body?: any): Promise<any> {
+    const response = await apiClient.post('/api/profiles/generate-fingerprint', body || {})
+    return response.data.data || response.data
   },
 
   // Sessions

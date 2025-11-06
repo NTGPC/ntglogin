@@ -23,6 +23,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { Plus, Edit, Trash2, Play, Search } from 'lucide-react'
+import RandomizeButton from '@/components/ProfileCreateModal/RandomFingerprint'
+import '@/styles/profile-modal.css'
 
 const fpSchema = z.object({
   userAgent: z.string().optional(),
@@ -136,40 +138,7 @@ export default function Profiles() {
     },
   ]
 
-  // Helpers to read/write fingerprint JSON quickly from controls
-  const readFp = (): any => {
-    try {
-      return fingerprintText?.trim() ? JSON.parse(fingerprintText) : {}
-    } catch {
-      return {}
-    }
-  }
-
-  const writeFp = (obj: any) => setFingerprintText(JSON.stringify(obj, null, 2))
-
-  const setFpPath = (path: string, value: any) => {
-    const fp = readFp()
-    const keys = path.split('.')
-    let cur = fp
-    for (let i = 0; i < keys.length - 1; i++) {
-      const k = keys[i]
-      if (typeof cur[k] !== 'object' || cur[k] == null) cur[k] = {}
-      cur = cur[k]
-    }
-    cur[keys[keys.length - 1]] = value
-    writeFp(fp)
-  }
-
-  const getFpPath = (path: string, fallback?: any) => {
-    const fp = readFp()
-    const keys = path.split('.')
-    let cur: any = fp
-    for (const k of keys) {
-      if (cur == null) return fallback
-      cur = cur[k]
-    }
-    return cur == null ? fallback : cur
-  }
+  // JSON preview only; not editing individual JSON fields anymore
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [profileProxyMap, setProfileProxyMap] = useState<Record<number, number | undefined>>(() => {
     try {
@@ -185,13 +154,31 @@ export default function Profiles() {
   const [profileWorkflowsMap, setProfileWorkflowsMap] = useState<Record<number, any[]>>({})
   const itemsPerPage = 10
 
+  // Extended create-profile configuration states (UI-only)
+  const [uaEditable, setUaEditable] = useState(false)
+  const [osName, setOsName] = useState<string>('Windows 10')
+  const [osArch, setOsArch] = useState<'x86' | 'x64'>('x64')
+  const [browserVersion, setBrowserVersion] = useState<string>('Auto')
+  const [screenRes, setScreenRes] = useState<string>('1920x1080')
+  const [canvasMode, setCanvasMode] = useState<'Noise' | 'Off' | 'Block'>('Noise')
+  const [clientRectsMode, setClientRectsMode] = useState<'Off' | 'Noise'>('Off')
+  const [audioCtxMode, setAudioCtxMode] = useState<'Off' | 'Noise'>('Off')
+  const [webglImageMode, setWebglImageMode] = useState<'Off' | 'Noise'>('Off')
+  const [webglMetaMode, setWebglMetaMode] = useState<'Mask' | 'Real'>('Mask')
+  const [geoEnabled, setGeoEnabled] = useState(false)
+  const [webrtcMainIP, setWebrtcMainIP] = useState(false)
+  const [proxyMode, setProxyMode] = useState<'manual' | 'library'>('manual')
+  const [proxyManual, setProxyManual] = useState<{ host?: string; port?: number; username?: string; password?: string }>({})
+  const [proxyRefId, setProxyRefId] = useState<string>('')
+  const [macAddr, setMacAddr] = useState<string>('Auto random (unique)')
+
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
   } = useForm<ProfileFormData>({
-    resolver: zodResolver(profileSchema),
+    resolver: zodResolver(profileSchema as any),
     defaultValues: {
       name: '',
       user_agent: '',
@@ -412,6 +399,81 @@ export default function Profiles() {
       } else {
         setFingerprintText('')
       }
+      // Prefill toggle states from existing fingerprint (avoid losing selections when re-open)
+      // Priority: fingerprintJson > fingerprint > DB fields > defaults
+      try {
+        const profile: any = editingProfile
+        // Try fingerprintJson first (new format)
+        let fp: any = profile.fingerprintJson || profile.fingerprint || {}
+        
+        // Also check individual DB fields (if saved separately)
+        if (profile.osName) setOsName(profile.osName)
+        else if (fp.os?.name) setOsName(fp.os.name)
+        
+        if (profile.osArch) setOsArch(profile.osArch === 'x86' ? 'x86' : 'x64')
+        else if (fp.os?.arch) setOsArch(fp.os.arch === 'x86' ? 'x86' : 'x64')
+        
+        if (profile.browserVersion) setBrowserVersion(String(profile.browserVersion))
+        else if (fp.browser?.version) setBrowserVersion(String(fp.browser.version))
+        
+        if (profile.screenWidth && profile.screenHeight) setScreenRes(`${profile.screenWidth}x${profile.screenHeight}`)
+        else if (fp.screen?.width && fp.screen?.height) setScreenRes(`${fp.screen.width}x${fp.screen.height}`)
+        
+        if (profile.canvasMode) setCanvasMode(profile.canvasMode as any)
+        else {
+          const canvas = fp.canvas?.mode || fp.canvas?.Mode || fp.canvas
+          if (canvas) setCanvasMode(canvas === 'Off' || canvas === 'Block' ? canvas : 'Noise')
+        }
+        
+        if (profile.clientRectsMode) setClientRectsMode(profile.clientRectsMode as any)
+        else {
+          const rects = fp.clientRects?.mode || fp.clientRects?.Mode
+          if (rects) setClientRectsMode(rects === 'Noise' ? 'Noise' : 'Off')
+        }
+        
+        if (profile.audioCtxMode) setAudioCtxMode(profile.audioCtxMode as any)
+        else {
+          const audio = fp.audioContext?.mode || fp.audioContext?.Mode
+          if (audio) setAudioCtxMode(audio === 'Noise' ? 'Noise' : 'Off')
+        }
+        
+        if (profile.webglImageMode) setWebglImageMode(profile.webglImageMode as any)
+        else {
+          const wimg = fp.webgl?.imageMode || fp.webgl?.image
+          if (wimg) setWebglImageMode(wimg === 'Noise' ? 'Noise' : 'Off')
+        }
+        
+        if (profile.webglMetaMode) setWebglMetaMode(profile.webglMetaMode as any)
+        else {
+          const wmeta = fp.webgl?.metaMode || fp.webgl?.metadata
+          if (wmeta) setWebglMetaMode(wmeta === 'Real' ? 'Real' : 'Mask')
+        }
+        
+        if (profile.geoEnabled !== undefined) setGeoEnabled(!!profile.geoEnabled)
+        else if (fp.geo) setGeoEnabled(!!fp.geo.enabled)
+        
+        if (profile.webrtcMainIP !== undefined) setWebrtcMainIP(!!profile.webrtcMainIP)
+        else if (fp.webrtc) setWebrtcMainIP(!!fp.webrtc.useMainIP)
+        
+        // Proxy
+        if (profile.proxyRefId) {
+          setProxyMode('library')
+          setProxyRefId(String(profile.proxyRefId))
+        } else if (profile.proxyManual) {
+          setProxyMode('manual')
+          setProxyManual(profile.proxyManual as any)
+        } else if (fp.proxy?.libraryId) {
+          setProxyMode('library')
+          setProxyRefId(String(fp.proxy.libraryId))
+        } else if (fp.proxy?.manual) {
+          setProxyMode('manual')
+          setProxyManual(fp.proxy.manual as any)
+        }
+        
+        // MAC
+        if (profile.macAddress) setMacAddr(profile.macAddress)
+        else if (fp.mac) setMacAddr(fp.mac)
+      } catch {}
     } else {
       reset({
         name: '',
@@ -419,8 +481,28 @@ export default function Profiles() {
         fingerprint: undefined,
       })
       setFingerprintText('')
+      // Reset UI selections to defaults when creating new
+      setUaEditable(false)
+      setOsName('Windows 10')
+      setOsArch('x64')
+      setBrowserVersion('Auto')
+      setScreenRes('1920x1080')
+      setCanvasMode('Noise')
+      setClientRectsMode('Off')
+      setAudioCtxMode('Off')
+      setWebglImageMode('Off')
+      setWebglMetaMode('Mask')
+      setGeoEnabled(false)
+      setWebrtcMainIP(false)
     }
   }, [editingProfile, reset])
+
+  const regenMac = () => {
+    const b = new Uint8Array(6)
+    for (let i = 0; i < 6; i++) b[i] = Math.floor(Math.random() * 256)
+    b[0] = (b[0] | 0x02) & 0xfe // local-admin & unicast
+    setMacAddr(Array.from(b).map((v) => v.toString(16).padStart(2, '0')).join(':'))
+  }
 
   const loadProfiles = async () => {
     try {
@@ -458,14 +540,31 @@ export default function Profiles() {
         }
       }
 
-      const payload: any = {
-        name: data.name,
-        user_agent: data.user_agent || undefined,
-      }
+      const payload: any = { name: data.name }
+      // UA: nếu người dùng không sửa → để trống để BE auto-random
+      if (uaEditable && data.user_agent) payload.user_agent = data.user_agent
       
       if (fingerprint !== undefined) {
         payload.fingerprint = fingerprint
       }
+
+      // Extended selections (all optional)
+      payload.osName = osName
+      payload.osArch = osName.startsWith('macOS') ? 'x64' : osArch
+      payload.browserVersion = browserVersion === 'Auto' ? undefined : Number(browserVersion)
+      const [w, h] = screenRes.split('x').map(Number)
+      payload.screenWidth = w
+      payload.screenHeight = h
+      payload.canvasMode = canvasMode
+      payload.clientRectsMode = clientRectsMode
+      payload.audioCtxMode = audioCtxMode
+      payload.webglImageMode = webglImageMode
+      payload.webglMetaMode = webglMetaMode
+      payload.geoEnabled = geoEnabled
+      payload.webrtcMainIP = webrtcMainIP
+      if (proxyMode === 'library' && proxyRefId) payload.proxyRefId = String(proxyRefId)
+      if (proxyMode === 'manual' && proxyManual.host && proxyManual.port) payload.proxyManual = proxyManual
+      if (macAddr !== 'Auto random (unique)') payload.macAddress = macAddr
 
       if (editingProfile) {
         await api.updateProfile(editingProfile.id, payload)
@@ -745,9 +844,17 @@ export default function Profiles() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => {
-                          setEditingProfile(profile)
-                          setDialogOpen(true)
+                        onClick={async () => {
+                          try {
+                            // Load fresh profile data from API to ensure we have latest settings
+                            const freshProfile = await api.getProfile(profile.id)
+                            setEditingProfile(freshProfile)
+                            setDialogOpen(true)
+                          } catch (e) {
+                            // Fallback to cached profile if API fails
+                            setEditingProfile(profile)
+                            setDialogOpen(true)
+                          }
                         }}
                       >
                         <Edit className="h-4 w-4" />
@@ -800,7 +907,7 @@ export default function Profiles() {
           setDialogOpen(true)
         }
       }}>
-        <DialogContent onClose={() => {
+        <DialogContent className="profile-modal" onClose={() => {
           setDialogOpen(false)
           setEditingProfile(null)
           reset()
@@ -813,7 +920,7 @@ export default function Profiles() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="space-y-4 py-4">
+            <div className="modal-body space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name *</Label>
                 <Input id="name" {...register('name')} />
@@ -823,7 +930,187 @@ export default function Profiles() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="user_agent">User Agent</Label>
-                <Input id="user_agent" {...register('user_agent')} />
+                <div className="flex gap-2 items-center">
+                  <Input id="user_agent" placeholder="Auto via provider" disabled={!uaEditable} {...register('user_agent')} />
+                  <Button type="button" variant="outline" onClick={async () => {
+                    try {
+                      const ua = await api.getUserAgent({ browser: 'chrome', versionHint: browserVersion === 'Auto' ? undefined : Number(browserVersion), os: osName })
+                      setUaEditable(true)
+                      // set value via manual set since we use react-hook-form
+                      const input = document.getElementById('user_agent') as HTMLInputElement | null
+                      if (input) input.value = ua
+                    } catch (e:any) {
+                      alert(e?.message || 'Failed to generate user agent')
+                    }
+                  }} title="Generate via provider">
+                    Generate
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setUaEditable((v) => !v)} title="Edit UA">
+                    {uaEditable ? 'Lock' : 'Edit'}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Mặc định hệ thống tự sinh UA duy nhất, bạn chỉ nên sửa khi thật cần.</p>
+              </div>
+
+              {/* OS & Arch */}
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>OS</Label>
+                  <select value={osName} onChange={(e) => setOsName(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {['Windows 11', 'Windows 10', 'Windows 8.1', 'macOS M1', 'macOS M2', 'macOS M3', 'macOS M4'].map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Architecture</Label>
+                  <div className="flex items-center gap-4 mt-2">
+                    {!osName.startsWith('macOS') ? (
+                      <>
+                        <label className="flex items-center gap-1 text-sm">
+                          <input type="radio" checked={osArch === 'x86'} onChange={() => setOsArch('x86')} /> 32-bit
+                        </label>
+                        <label className="flex items-center gap-1 text-sm">
+                          <input type="radio" checked={osArch === 'x64'} onChange={() => setOsArch('x64')} /> 64-bit
+                        </label>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">macOS chỉ hỗ trợ 64-bit</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Browser Version & Screen */}
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Browser Version</Label>
+                  <select value={browserVersion} onChange={(e) => setBrowserVersion(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <option>Auto</option>
+                    {[140,139,138,137,136,135,134,133,132,131,130].map((v) => (
+                      <option key={v} value={String(v)}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Screen Resolution</Label>
+                  <select value={screenRes} onChange={(e) => setScreenRes(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {['1366x768', '1536x864', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3440x1440', '3840x2160'].map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div className="grid md:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <Label>Canvas</Label>
+                  <div className="flex gap-3 mt-2">
+                    {(['Noise', 'Off', 'Block'] as const).map((m) => (
+                      <label key={m} className="flex items-center gap-1">
+                        <input type="radio" checked={canvasMode === m} onChange={() => setCanvasMode(m)} /> {m}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>Client Rects</Label>
+                  <div className="flex gap-3 mt-2">
+                    {(['Off', 'Noise'] as const).map((m) => (
+                      <label key={m} className="flex items-center gap-1">
+                        <input type="radio" checked={clientRectsMode === m} onChange={() => setClientRectsMode(m)} /> {m}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>Audio Context</Label>
+                  <div className="flex gap-3 mt-2">
+                    {(['Off', 'Noise'] as const).map((m) => (
+                      <label key={m} className="flex items-center gap-1">
+                        <input type="radio" checked={audioCtxMode === m} onChange={() => setAudioCtxMode(m)} /> {m}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>WebGL Image</Label>
+                  <div className="flex gap-3 mt-2">
+                    {(['Off', 'Noise'] as const).map((m) => (
+                      <label key={m} className="flex items-center gap-1">
+                        <input type="radio" checked={webglImageMode === m} onChange={() => setWebglImageMode(m)} /> {m}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>WebGL Metadata</Label>
+                  <div className="flex gap-3 mt-2">
+                    {(['Mask', 'Real'] as const).map((m) => (
+                      <label key={m} className="flex items-center gap-1">
+                        <input type="radio" checked={webglMetaMode === m} onChange={() => setWebglMetaMode(m)} /> {m}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={geoEnabled} onChange={(e) => setGeoEnabled(e.target.checked)} /> GEO Location
+                    <span className="text-xs text-muted-foreground">{geoEnabled ? 'Using fake (hide original)' : 'Using original'}</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={webrtcMainIP} onChange={(e) => setWebrtcMainIP(e.target.checked)} /> WebRTC IP (main)
+                    <span className="text-xs text-muted-foreground">{webrtcMainIP ? 'Using fake (hide original)' : 'Using original'}</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Proxy */}
+              <div className="space-y-2">
+                <Label>Proxy</Label>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-1">
+                    <input type="radio" checked={proxyMode === 'manual'} onChange={() => setProxyMode('manual')} /> Manual
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input type="radio" checked={proxyMode === 'library'} onChange={() => setProxyMode('library')} /> Library
+                  </label>
+                </div>
+                {proxyMode === 'manual' ? (
+                  <div className="grid md:grid-cols-4 gap-2">
+                    <Input placeholder="Host" value={proxyManual.host || ''} onChange={(e) => setProxyManual({ ...proxyManual, host: e.target.value })} />
+                    <Input placeholder="Port" type="number" value={(proxyManual.port as any) || ''} onChange={(e) => setProxyManual({ ...proxyManual, port: Number(e.target.value) })} />
+                    <Input placeholder="Username" value={proxyManual.username || ''} onChange={(e) => setProxyManual({ ...proxyManual, username: e.target.value })} />
+                    <Input placeholder="Password" type="password" value={proxyManual.password || ''} onChange={(e) => setProxyManual({ ...proxyManual, password: e.target.value })} />
+                  </div>
+                ) : (
+                  <select value={proxyRefId} onChange={(e) => setProxyRefId(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    <option value="">-- Chọn proxy từ thư viện --</option>
+                    {proxies.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.host}:{p.port} ({p.type})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* MAC */}
+              <div className="space-y-1">
+                <Label>MAC Address</Label>
+                <div className="flex gap-2 items-center">
+                  <Input value={macAddr} onChange={(e) => setMacAddr(e.target.value)} placeholder="Auto random (unique)" />
+                  <Button type="button" variant="outline" onClick={regenMac} title="Regenerate MAC">
+                    Refresh
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="fingerprint">Fingerprint (JSON)</Label>
@@ -850,83 +1137,32 @@ export default function Profiles() {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">Canvas</div>
-                    <div className="inline-flex rounded border overflow-hidden">
-                      {(['noise','off','block'] as const).map((opt)=> (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={()=> setFpPath('canvas.mode', opt)}
-                          className={`px-3 py-1 text-xs ${getFpPath('canvas.mode')===opt? 'bg-green-100 text-green-800':'hover:bg-slate-100'}`}
-                        >
-                          {opt[0].toUpperCase()+opt.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">Client Rects</div>
-                    <div className="inline-flex rounded border overflow-hidden">
-                      {(['off','noise'] as const).map((opt)=> (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={()=> setFpPath('clientRects.mode', opt)}
-                          className={`px-3 py-1 text-xs ${getFpPath('clientRects.mode')===opt? 'bg-green-100 text-green-800':'hover:bg-slate-100'}`}
-                        >
-                          {opt[0].toUpperCase()+opt.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">Audio Context</div>
-                    <div className="inline-flex rounded border overflow-hidden">
-                      {(['off','noise'] as const).map((opt)=> (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={()=> setFpPath('audioContext.mode', opt)}
-                          className={`px-3 py-1 text-xs ${getFpPath('audioContext.mode')===opt? 'bg-green-100 text-green-800':'hover:bg-slate-100'}`}
-                        >
-                          {opt[0].toUpperCase()+opt.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">WebGL Image</div>
-                    <div className="inline-flex rounded border overflow-hidden">
-                      {(['off','noise'] as const).map((opt)=> (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={()=> setFpPath('webgl.image', opt)}
-                          className={`px-3 py-1 text-xs ${getFpPath('webgl.image')===opt? 'bg-green-100 text-green-800':'hover:bg-slate-100'}`}
-                        >
-                          {opt[0].toUpperCase()+opt.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">WebGL Metadata</div>
-                    <div className="inline-flex rounded border overflow-hidden">
-                      {(['mask','real'] as const).map((opt)=> (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={()=> setFpPath('webgl.metadata', opt)}
-                          className={`px-3 py-1 text-xs ${getFpPath('webgl.metadata')===opt? 'bg-green-100 text-green-800':'hover:bg-slate-100'}`}
-                        >
-                          {opt[0].toUpperCase()+opt.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <RandomizeButton
+                    onSet={async () => {
+                      try {
+                        const fp = await api.generateFingerprint({
+                          osName,
+                          osArch,
+                          browserVersion: browserVersion === 'Auto' ? undefined : Number(browserVersion),
+                        })
+                        setFingerprintText(JSON.stringify(fp, null, 2))
+                        setOsName(fp.os?.name || 'Windows 10')
+                        setOsArch(fp.os?.arch === 'x86' ? 'x86' : 'x64')
+                        setBrowserVersion(String(fp.browser?.version || 'Auto'))
+                        setScreenRes(`${fp.screen?.width || 1920}x${fp.screen?.height || 1080}`)
+                        setCanvasMode(fp.canvas?.mode === 'Off' || fp.canvas?.mode === 'Block' ? fp.canvas.mode : 'Noise')
+                        setClientRectsMode(fp.clientRects?.mode === 'Noise' ? 'Noise' : 'Off')
+                        setAudioCtxMode(fp.audioContext?.mode === 'Noise' ? 'Noise' : 'Off')
+                        setWebglImageMode(fp.webgl?.imageMode === 'Noise' ? 'Noise' : 'Off')
+                        setWebglMetaMode(fp.webgl?.metaMode === 'Real' ? 'Real' : 'Mask')
+                        setGeoEnabled(!!fp.geo?.enabled)
+                        setWebrtcMainIP(!!fp.webrtc?.useMainIP)
+                        if (fp.mac) setMacAddr(fp.mac)
+                      } catch (e: any) {
+                        alert(e?.message || 'Failed to generate fingerprint')
+                      }
+                    }}
+                  />
                 </div>
                 <textarea
                   id="fingerprint"
@@ -961,7 +1197,7 @@ export default function Profiles() {
                 )}
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="modal-footer">
               <Button
                 type="button"
                 variant="outline"

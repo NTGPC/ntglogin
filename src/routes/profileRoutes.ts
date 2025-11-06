@@ -6,6 +6,8 @@ const router = Router();
 router.get('/', profileController.getAll);
 router.get('/:id', profileController.getById);
 router.get('/:id/fingerprint', profileController.getFingerprint);
+router.post('/generate-fingerprint', profileController.generateFingerprint);
+router.post('/user-agent', profileController.getUserAgent);
 router.post('/', profileController.create);
 router.put('/:id', profileController.update);
 router.put('/:id/fingerprint', profileController.updateFingerprint);

@@ -1,0 +1,22 @@
+/* modal custom */
+
+.profile-modal .modal-dialog {
+  max-width: 880px;
+}
+
+.profile-modal .modal-body {
+  max-height: calc(100vh - 220px); /* header+footer space */
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+/* keep footer visible */
+.profile-modal .modal-footer {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.6));
+  padding: 1rem;
+  border-top: 1px solid rgba(0,0,0,0.04);
+}
+
+

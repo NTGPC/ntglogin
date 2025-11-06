@@ -1,0 +1,36 @@
+{
+  "name": "Peanut-01",
+  "seed": 987654321,
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0.0.0 Safari/537.36",
+  "screen": {
+    "width": 1366,
+    "height": 768,
+    "dpr": 1
+  },
+  "canvas": {
+    "mode": "Noise"
+  },
+  "webgl": {
+    "metaMode": "Mask",
+    "vendor": "PlasticVendor Inc.",
+    "renderer": "PlasticRenderer",
+    "useSwiftShader": false
+  },
+  "audioContext": {
+    "mode": "Noise"
+  },
+  "clientRects": {
+    "mode": "Noise"
+  },
+  "geo": {
+    "enabled": true,
+    "lat": 10.762622,
+    "lon": 106.660172
+  },
+  "webrtc": {
+    "useMainIP": false
+  },
+  "mac": "02:12:34:56:78:9a",
+  "test_url": "https://pixelscan.net/fingerprint-check"
+}
+

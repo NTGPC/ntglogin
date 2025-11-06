@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, Proxy } from '@/lib/api'
+import { api, Proxy, ProxyCheckResult } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -48,6 +48,7 @@ export default function Proxies() {
   const [currentPage, setCurrentPage] = useState(1)
   const [feedback, setFeedback] = useState<null | { type: 'success' | 'error'; message: string }>(null)
   const [proxyString, setProxyString] = useState('')
+  const [liveStatusById, setLiveStatusById] = useState<Record<number, ProxyCheckResult>>({})
   const itemsPerPage = 10
 
   const {
@@ -129,8 +130,13 @@ export default function Proxies() {
         await api.updateProxy(editingProxy.id, payload)
         setFeedback({ type: 'success', message: 'Proxy updated successfully' })
       } else {
-        await api.createProxy(payload)
-        setFeedback({ type: 'success', message: 'Proxy created successfully' })
+        const created = await api.createProxy(payload)
+        setFeedback({ type: 'success', message: 'Proxy created successfully. Checking live…' })
+        // Auto check liveness after create
+        try {
+          const result = await api.checkProxy(created.id)
+          setLiveStatusById((m) => ({ ...m, [created.id]: result }))
+        } catch {}
       }
       setDialogOpen(false)
       setEditingProxy(null)
@@ -144,6 +150,16 @@ export default function Proxies() {
       setTimeout(() => setFeedback(null), 4000)
     }
   }
+  const checkOne = async (id: number) => {
+    setLiveStatusById((m) => ({ ...m, [id]: { ...(m[id] || {}), error: undefined } as any }))
+    try {
+      const result = await api.checkProxy(id)
+      setLiveStatusById((m) => ({ ...m, [id]: result }))
+    } catch (e: any) {
+      setLiveStatusById((m) => ({ ...m, [id]: { live: false, latencyMs: null, error: e?.message || 'Check failed' } }))
+    }
+  }
+
 
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this proxy?')) return
@@ -279,15 +295,24 @@ export default function Proxies() {
                   <TableCell>{proxy.type}</TableCell>
                   <TableCell>{proxy.username || '-'}</TableCell>
                   <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                        proxy.active
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                          : 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
-                      }`}
-                    >
-                      {proxy.active ? 'Active' : 'Inactive'}
-                    </span>
+                    {liveStatusById[proxy.id] ? (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                          liveStatusById[proxy.id].live
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        }`}
+                        title={
+                          liveStatusById[proxy.id].latencyMs
+                            ? `${liveStatusById[proxy.id].latencyMs} ms`
+                            : (liveStatusById[proxy.id].error || '')
+                        }
+                      >
+                        {liveStatusById[proxy.id].live ? 'Live' : 'Not Live'}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {new Date(proxy.created_at).toLocaleDateString()}
@@ -303,6 +328,14 @@ export default function Proxies() {
                         }}
                       >
                         <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => checkOne(proxy.id)}
+                        title="Check live"
+                      >
+                        <CheckCircle className="h-4 w-4 text-green-600" />
                       </Button>
                       <Button
                         variant="ghost"

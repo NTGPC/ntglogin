@@ -141,6 +141,67 @@ async function main() {
   });
   console.log('✅ Created logs');
 
+  // Create initial changelog entries
+  await prisma.changelog.createMany({
+    data: [
+      {
+        version: 'Unreleased',
+        title: 'Comprehensive Fingerprint Injection System',
+        type: 'Added',
+        category: 'Fingerprint',
+        description: 'Add seeded PRNG (xorshift32), Canvas, WebGL/WebGL2/OffscreenCanvas, Audio fingerprint patches',
+        files: [
+          'src/services/browserService.ts',
+          'scripts/inject_before_load.js',
+          'scripts/launch_profile.py',
+        ],
+        author: 'System',
+      },
+      {
+        version: 'Unreleased',
+        title: 'Chrome SwiftShader Flags Support',
+        type: 'Added',
+        category: 'Fingerprint',
+        description: 'Add support for --use-gl=swiftshader and --use-angle=swiftshader to mask GPU driver version',
+        files: ['src/services/browserService.ts', 'scripts/launch_profile.py'],
+        author: 'System',
+      },
+      {
+        version: 'Unreleased',
+        title: 'Profile Isolation with Auto Cleanup',
+        type: 'Changed',
+        category: 'Profile',
+        description: 'Each profile now has isolated browser_profiles directory. Auto cleanup when delete/create profile',
+        files: ['src/services/profileService.ts'],
+        author: 'System',
+      },
+      {
+        version: 'Unreleased',
+        title: 'Fix Proxy Foreign Key Constraint',
+        type: 'Fixed',
+        category: 'Session',
+        description: 'Fix foreign key constraint violation when proxy_id does not exist',
+        files: ['src/services/sessionService.ts'],
+        author: 'System',
+      },
+      {
+        version: 'Unreleased',
+        title: 'Changelog Management System',
+        type: 'Added',
+        category: 'System',
+        description: 'Add Changelog model and API endpoints to track project changes',
+        files: [
+          'prisma/schema.prisma',
+          'src/services/changelogService.ts',
+          'src/controllers/changelogController.ts',
+          'src/routes/changelogRoutes.ts',
+        ],
+        author: 'System',
+      },
+    ],
+  });
+  console.log('✅ Created changelog entries');
+
   console.log('🎉 Seed completed successfully!');
 }
 

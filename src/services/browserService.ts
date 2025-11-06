@@ -6,6 +6,341 @@ import fs from 'fs';
 // Store browser instances per session (Puppeteer Browser or Playwright Context)
 const browserInstances = new Map<number, any>();
 
+/**
+ * Build comprehensive stealth fingerprint injection script
+ * Based on Python Selenium implementation for maximum compatibility
+ */
+function buildStealthScript(fp: any): string {
+  const fpJson = JSON.stringify(fp);
+  
+  return `
+(() => {
+  // Get fingerprint from injected or fallback to defaults
+  const FP = window.__INJECTED_FINGERPRINT__ || (typeof window.__PROFILE__ !== 'undefined' ? window.__PROFILE__ : ${fpJson}) || {
+    seed: 12345,
+    ua: null,
+    screen: { width: 1920, height: 1080, dpr: 1 },
+    canvas: { mode: 'Noise' },
+    webgl: { metaMode: 'Mask', imageMode: 'Off' },
+    audioContext: { mode: 'Noise' },
+    clientRects: { mode: 'Noise' },
+    geo: { enabled: false, lat: null, lon: null },
+    webrtc: { useMainIP: false },
+    seedFallback: 1234567
+  };
+  
+  // ---------- seeded PRNG (xorshift32) ----------
+  function xorshift32(seed) {
+    let x = seed >>> 0;
+    return function() {
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+      return (x >>> 0) / 4294967295;
+    };
+  }
+  
+  const seed = (FP && (FP.seed || FP.seedFallback || FP.profileId || 12345)) >>> 0;
+  const rand = xorshift32(seed);
+  
+  // ---------- helpers ----------
+  function randInt(min, max) { return Math.floor(rand() * (max - min + 1)) + min; }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  
+  // ---------- navigator properties ----------
+  try {
+    if (typeof navigator !== 'undefined') {
+      try { Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true }); } catch(e){/*ignore*/}
+      
+      const fakeHC = FP.hwc || FP.hardware?.cores || (4 + (seed % 4)); // 4..7
+      const fakeDM = FP.dmem || FP.hardware?.memoryGb || 4; // GB
+      const fakePlatform = FP.platform || (FP.os && FP.os.startsWith && FP.os.startsWith('macOS') ? 'MacIntel' : 
+                                           (FP.osName && FP.osName.startsWith('macOS') ? 'MacIntel' : 'Win32'));
+      const fakeLangs = FP.languages || ['en-US', 'en'];
+      
+      try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => fakeHC, configurable: true }); } catch(e){}
+      try { Object.defineProperty(navigator, 'deviceMemory', { get: () => fakeDM, configurable: true }); } catch(e){}
+      try { Object.defineProperty(navigator, 'platform', { get: () => fakePlatform, configurable: true }); } catch(e){}
+      try { Object.defineProperty(navigator, 'languages', { get: () => fakeLangs, configurable: true }); } catch(e){}
+      try { Object.defineProperty(navigator, 'language', { get: () => fakeLangs[0] || 'en-US', configurable: true }); } catch(e){}
+    }
+  } catch(e){/*ignore*/}
+  
+  // ---------- Canvas: deterministic noise or block ----------
+  (function canvasPatch(){
+    const mode = (FP.canvas && FP.canvas.mode) || (FP.canvasMode) || 'Noise';
+    if (mode === 'Block') {
+      try {
+        HTMLCanvasElement.prototype.toDataURL = function() { throw new Error('Canvas blocked'); };
+        HTMLCanvasElement.prototype.toBlob = function() { throw new Error('Canvas blocked'); };
+      } catch(e){}
+      return;
+    }
+    // deterministic noise: mutate getImageData and toDataURL via context
+    const origGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+      const ctx = origGetContext.call(this, type, attrs);
+      if (!ctx) return ctx;
+      if (type === '2d') {
+        try {
+          const orig_getImageData = ctx.getImageData;
+          ctx.getImageData = function(x, y, w, h) {
+            const data = orig_getImageData.call(this, x, y, w, h);
+            // apply low-magnitude deterministic noise
+            const len = data.data.length;
+            for (let i = 0; i < len; i += 4) {
+              // small jitter - deterministic
+              const j = Math.floor((rand() - 0.5) * 6); // -3..+2
+              data.data[i] = (data.data[i] + j) & 255;
+              data.data[i+1] = (data.data[i+1] + j) & 255;
+              data.data[i+2] = (data.data[i+2] + j) & 255;
+            }
+            return data;
+          };
+        } catch(e){}
+      }
+      return ctx;
+    };
+  })();
+  
+  // ---------- WebGL/WebGL2 + OffscreenCanvas: mask vendor/renderer & mute debug ----------
+  (function webglPatch(){
+    const VENDOR = (FP.webgl && FP.webgl.vendor) || 'PolyVendor Labs';
+    const RENDER = (FP.webgl && FP.webgl.renderer) || 'PolyRenderer 1.0';
+    const REAL = FP.webgl && FP.webgl.metaMode === 'Real';
+    
+    function hardDefine(obj, name, fn) {
+      try {
+        Object.defineProperty(obj, name, { value: fn, configurable: true });
+      } catch(e) {
+        try { obj[name] = fn; } catch(_){/* ignore */}
+      }
+    }
+    
+    function patchProto(proto) {
+      if (!proto) return;
+      
+      const orig_getParameter = proto.getParameter;
+      const orig_getExtension = proto.getExtension;
+      const orig_getSupported = proto.getSupportedExtensions;
+      const orig_readPixels = proto.readPixels;
+      const orig_prec = proto.getShaderPrecisionFormat;
+      
+      hardDefine(proto, 'getParameter', function(param) {
+        try {
+          if (!REAL) {
+            if (param === 37445) return VENDOR;   // UNMASKED_VENDOR_WEBGL
+            if (param === 37446) return RENDER;   // UNMASKED_RENDERER_WEBGL
+          }
+          return orig_getParameter.call(this, param);
+        } catch(e) { return null; }
+      });
+      
+      hardDefine(proto, 'getExtension', function(name) {
+        if (name && /WEBGL_debug/.test(name)) return null;
+        return orig_getExtension.call(this, name);
+      });
+      
+      hardDefine(proto, 'getSupportedExtensions', function() {
+        const list = (orig_getSupported && orig_getSupported.call(this)) || [];
+        return list.filter(e => !/debug|unmasked/i.test(e));
+      });
+      
+      // make pixel hash deterministic-but-different
+      hardDefine(proto, 'readPixels', function(x, y, w, h, fmt, typ, pix) {
+        try {
+          orig_readPixels.call(this, x, y, w, h, fmt, typ, pix);
+          if (!pix || !pix.length) return;
+          for (let i = 0; i < Math.min(256, pix.length); i += 4) {
+            pix[i] = (pix[i] + ((FP.seed || seed || 12345) % 7)) & 255;
+          }
+        } catch(e) {}
+      });
+      
+      hardDefine(proto, 'getShaderPrecisionFormat', function(t, p) {
+        try {
+          const v = orig_prec.call(this, t, p);
+          if (!v) return v;
+          return { rangeMin: v.rangeMin, rangeMax: v.rangeMax, precision: Math.max(8, v.precision) };
+        } catch(e) { return { rangeMin: 0, rangeMax: 0, precision: 8 }; }
+      });
+    }
+    
+    // WebGL1 + WebGL2
+    if (window.WebGLRenderingContext) patchProto(WebGLRenderingContext.prototype);
+    if (window.WebGL2RenderingContext) patchProto(WebGL2RenderingContext.prototype);
+    
+    // OffscreenCanvas contexts
+    if (window.OffscreenCanvas) {
+      const orig = OffscreenCanvas.prototype.getContext;
+      hardDefine(OffscreenCanvas.prototype, 'getContext', function(type, opts) {
+        const ctx = orig.call(this, type, opts);
+        try {
+          const p = Object.getPrototypeOf(ctx);
+          patchProto(p); // patch instance proto too
+        } catch(e) {}
+        return ctx;
+      });
+    }
+  })();
+
+  // ---------- Audio fingerprint: patch OfflineAudioContext & Analyser deterministic ----------
+  (function audioPatch(){
+    const audioSeed = (FP.seed || seed || 12345) >>> 0;
+    const mode = (FP.audioContext && FP.audioContext.mode) || (FP.audioCtxMode) || 'Off';
+    
+    if (mode === 'Noise') {
+      // OfflineAudioContext (được dùng để render buffer rồi hash)
+      try {
+        const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (OAC && OAC.prototype && OAC.prototype.startRendering) {
+          const origStart = OAC.prototype.startRendering;
+          Object.defineProperty(OAC.prototype, 'startRendering', {
+            value: function() {
+              const ret = origStart.apply(this, arguments);
+              return Promise.resolve(ret).then(buf => {
+                try {
+                  const ch = buf.numberOfChannels;
+                  for (let c = 0; c < ch; c++) {
+                    const data = buf.getChannelData(c);
+                    for (let i = 0; i < data.length; i += 128) {
+                      // nhiễu rất nhỏ nhưng ổn định theo seed
+                      data[i] = data[i] + ((audioSeed % 9) - 4) * 1e-7;
+                    }
+                  }
+                } catch(e) {}
+                return buf;
+              });
+            },
+            configurable: true
+          });
+        }
+      } catch(e) {}
+      
+      // Realtime Analyser (ít site dùng, nhưng patch cho chắc)
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC && AC.prototype && AC.prototype.createAnalyser) {
+          const origCreate = AC.prototype.createAnalyser;
+          Object.defineProperty(AC.prototype, 'createAnalyser', {
+            value: function() {
+              const an = origCreate.call(this);
+              if (an && an.getFloatTimeDomainData) {
+                const orig = an.getFloatTimeDomainData.bind(an);
+                an.getFloatTimeDomainData = function(arr) {
+                  orig(arr);
+                  for (let i = 0; i < arr.length; i += 128) {
+                    arr[i] = arr[i] + ((audioSeed % 7) * 1e-7);
+                  }
+                };
+              }
+              return an;
+            },
+            configurable: true
+          });
+        }
+      } catch(e) {}
+    }
+  })();
+  
+  // ---------- clientRects: getBoundingClientRect + getClientRects ----------
+  (function rectsPatch(){
+    const elProto = Element.prototype;
+    const mode = (FP.clientRects && FP.clientRects.mode) || (FP.clientRectsMode) || 'Off';
+    if (mode === 'Noise') {
+      const orig_getBoundingClientRect = elProto.getBoundingClientRect;
+      elProto.getBoundingClientRect = function() {
+        const r = orig_getBoundingClientRect.call(this);
+        const jitter = ((seed % 5) - 2) / 100; // small deterministic jitter
+        return {
+          x: r.x + jitter, y: r.y + jitter, width: r.width + jitter, height: r.height + jitter,
+          top: r.top + jitter, left: r.left + jitter, right: r.right + jitter, bottom: r.bottom + jitter
+        };
+      };
+      const orig_getClientRects = elProto.getClientRects;
+      elProto.getClientRects = function() {
+        const col = orig_getClientRects.call(this);
+        // could adjust rects values similarly if needed
+        return col;
+      };
+    }
+  })();
+  
+  // ---------- WebRTC: intercept ICE candidates (drop local private) ----------
+  (function webrtcPatch(){
+    try {
+      const OrigPeer = window.RTCPeerConnection;
+      if (!OrigPeer) return;
+      function FakePC(...args) {
+        const pc = new OrigPeer(...args);
+        // intercept onicecandidate addEventListener
+        const origAddEvent = pc.addEventListener.bind(pc);
+        pc.addEventListener = function(type, listener, ...rest) {
+          if (type === 'icecandidate') {
+            const wrapped = function(e) {
+              if (!e || !e.candidate) return;
+              const cand = e.candidate.candidate || '';
+              // if useMainIP false -> drop private addresses
+              if (!FP.webrtc || !FP.webrtc.useMainIP) {
+                // drop local/private IP candidates
+                if (/(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[0-1])|169\\.254\\.)/.test(cand)) return;
+              }
+              try { listener.call(this, e); } catch(err){}
+            };
+            return origAddEvent(type, wrapped, ...rest);
+          }
+          return origAddEvent(type, listener, ...rest);
+        };
+        return pc;
+      }
+      FakePC.prototype = OrigPeer.prototype;
+      window.RTCPeerConnection = FakePC;
+    } catch(e){}
+  })();
+  
+  // ---------- Geolocation override ----------
+  (function geoPatch(){
+    if (FP.geo && FP.geo.enabled) {
+      try {
+        const fakePos = {
+          coords: {
+            latitude: FP.geo.lat || 10.762622,
+            longitude: FP.geo.lon || 106.660172,
+            accuracy: 50
+          }
+        };
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition = function(success, error, opts) {
+            setTimeout(()=> success(fakePos), 10);
+          };
+          navigator.geolocation.watchPosition = function(success, error, opts) {
+            const id = Math.floor(rand()*100000);
+            setTimeout(()=> success(fakePos), 10);
+            return id;
+          };
+        }
+      } catch(e){}
+    }
+  })();
+  
+  // ---------- mark injected for debug ----------
+  try { Object.defineProperty(window, '__INJECTED_FINGERPRINT__', { value: FP, configurable:false }); } catch(e){}
+  
+  // Remove Chrome automation indicators
+  try { delete window.chrome; window.chrome = { runtime: {} }; } catch(e){}
+  
+  // Override permissions query
+  try {
+    const originalQuery = navigator.permissions.query;
+    navigator.permissions.query = function(parameters) {
+      if (parameters.name === 'notifications') {
+        return Promise.resolve({ state: Notification.permission });
+      }
+      return originalQuery.call(this, parameters);
+    };
+  } catch(e){}
+})();
+`;
+}
+
 interface BrowserLaunchOptions {
   profileId: number;
   sessionId: number;
@@ -125,32 +460,80 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
     } else {
       contextOptions.viewport = { width: 1280, height: 720 };
     }
+    
+    // WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader)
+    const useSwiftShader = fingerprint?.webgl?.useSwiftShader || fingerprint?.webglImageMode === 'swiftshader';
+    if (useSwiftShader) {
+      contextOptions.args.push('--use-gl=swiftshader');          // ép WebGL dùng SwiftShader
+      contextOptions.args.push('--use-angle=swiftshader');       // ANGLE -> swiftshader
+      contextOptions.args.push('--disable-software-rasterizer=false');
+      // Optional: contextOptions.args.push('--gpu-rasterization-msaa-sample-count=0');
+    }
 
-    const context = await chromium.launchPersistentContext(profileDir, contextOptions);
-    browserInstances.set(sessionId, context);
+    try {
+      const context = await chromium.launchPersistentContext(profileDir, contextOptions);
+      browserInstances.set(sessionId, context);
 
-    // Ensure at least one page exists and is frontmost
-    const pages = context.pages();
-    let page: Page | undefined = pages[0];
-    if (!page) page = await context.newPage();
-    try { await page.bringToFront(); } catch {}
+      // Ensure at least one page exists and is frontmost
+      const pages = context.pages();
+      let page: Page | undefined = pages[0];
+      if (!page) page = await context.newPage();
+      try { await page.bringToFront(); } catch {}
 
-    // Remove about:blank if session tabs are restored
-    setTimeout(async () => {
-      try {
-        const all = context.pages();
-        if (all.length > 1) {
-          for (const p of all) {
-            const url = p.url();
-            if (url === 'about:blank') {
-              try { await p.close(); } catch {}
+      // Remove about:blank if session tabs are restored
+      setTimeout(async () => {
+        try {
+          const all = context.pages();
+          if (all.length > 1) {
+            for (const p of all) {
+              const url = p.url();
+              if (url === 'about:blank') {
+                try { await p.close(); } catch {}
+              }
             }
           }
-        }
-      } catch {}
-    }, 1200);
+        } catch {}
+      }, 1200);
 
-    return context;
+      // Inject fingerprint for Playwright context
+      if (fingerprint) {
+        try {
+          const normalizedFp: any = {
+            ...fingerprint,
+            // Add profileId for deterministic seeded noise (canvas, etc.)
+            profileId: profileId,
+            canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : undefined),
+            clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : undefined),
+            audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : undefined),
+            webgl: fingerprint.webgl || {
+              imageMode: fingerprint.webglImageMode,
+              metaMode: fingerprint.webglMetaMode,
+            },
+            geo: fingerprint.geo || (fingerprint.geoEnabled !== undefined ? { enabled: fingerprint.geoEnabled } : undefined),
+            webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : undefined),
+          };
+          const stealthScript = buildStealthScript(normalizedFp);
+          // Inject into all existing and future pages
+          for (const p of context.pages()) {
+            await p.addInitScript(stealthScript);
+          }
+          context.on('page', (newPage) => {
+            newPage.addInitScript(stealthScript).catch(() => {});
+          });
+          console.log(`[Browser ${sessionId}] Stealth fingerprint injected for Playwright context`);
+        } catch (fpError) {
+          console.warn(`[Browser ${sessionId}] Failed to inject fingerprint for Playwright:`, fpError);
+        }
+      }
+
+      return context;
+    } catch (playwrightError: any) {
+      console.error(`[Browser ${sessionId}] Playwright launch failed:`, playwrightError);
+      // If Playwright fails (e.g., browser not installed), fallback to Puppeteer
+      // Note: Puppeteer proxy auth needs to be handled via page.authenticate()
+      console.log(`[Browser ${sessionId}] Falling back to Puppeteer...`);
+      // Continue to Puppeteer path below
+    }
   }
 
   // Build launch args for Puppeteer path (no proxy auth required)
@@ -169,6 +552,15 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
   const needsProxyAuth = !!(proxy && proxy.username);
   if (!needsProxyAuth) {
     launchArgs.push('--restore-last-session');
+  }
+  
+  // WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader)
+  const useSwiftShader = fingerprint?.webgl?.useSwiftShader || fingerprint?.webglImageMode === 'swiftshader';
+  if (useSwiftShader) {
+    launchArgs.push('--use-gl=swiftshader');          // ép WebGL dùng SwiftShader
+    launchArgs.push('--use-angle=swiftshader');       // ANGLE -> swiftshader
+    launchArgs.push('--disable-software-rasterizer=false');
+    // Optional: launchArgs.push('--gpu-rasterization-msaa-sample-count=0');
   }
 
   // Add proxy if provided (Puppeteer doesn't support auth in URL, use authenticate() instead)
@@ -285,129 +677,74 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
     }
   }
 
-  // Apply fingerprint languages and canvas if available (only if page is still valid)
+  // Inject comprehensive stealth fingerprint script (only if page is still valid)
   if (fingerprint && !page.isClosed()) {
     try {
-      // Languages via init script
+      // Normalize fingerprint format: support both old format (nested) and new format (flat)
+      const normalizedFp: any = {
+        ...fingerprint,
+        // Add profileId for deterministic seeded noise (canvas, etc.)
+        profileId: profileId,
+        // Map flat DB fields to nested format for script compatibility
+        canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : undefined),
+        clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : undefined),
+        audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : undefined),
+        webgl: fingerprint.webgl || {
+          imageMode: fingerprint.webglImageMode,
+          metaMode: fingerprint.webglMetaMode,
+        },
+        geo: fingerprint.geo || (fingerprint.geoEnabled !== undefined ? { enabled: fingerprint.geoEnabled } : undefined),
+        webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : undefined),
+      };
+      
+      // Languages
       if (Array.isArray(fingerprint.languages) && fingerprint.languages.length) {
-        const langs = fingerprint.languages;
         await page.evaluateOnNewDocument((ls: string[]) => {
           // @ts-ignore - This code runs in browser context, navigator exists
           Object.defineProperty(navigator, 'languages', { get: () => ls });
           // @ts-ignore - This code runs in browser context, navigator exists
           Object.defineProperty(navigator, 'language', { get: () => ls[0] || 'en-US' });
-        }, langs);
+        }, fingerprint.languages);
       }
-
-      // Canvas (noise/off/block)
-      if (fingerprint.canvas && fingerprint.canvas.mode && fingerprint.canvas.mode !== 'real') {
-        const seed = fingerprint.canvas.seed || 's1';
-        await page.evaluateOnNewDocument((cfg: { mode: string; seed: string }) => {
-          const rand = (x: number) => {
-            let h = 0;
-            for (let i = 0; i < cfg.seed.length; i++) h = (h << 5) - h + cfg.seed.charCodeAt(i);
-            const n = Math.sin(h + x) * 10000;
-            return n - Math.floor(n);
-          };
-          if (cfg.mode === 'block' || cfg.mode === 'off') {
-            // @ts-ignore - This code runs in browser context, HTMLCanvasElement exists
-            const toDataURL = HTMLCanvasElement.prototype.toDataURL;
-            // @ts-ignore - This code runs in browser context, HTMLCanvasElement exists
-            HTMLCanvasElement.prototype.toDataURL = function (this: any) {
-              try {
-                // @ts-ignore - Browser context
-                const ctx = this.getContext('2d');
-                if (ctx) {
-                  // @ts-ignore - Browser context
-                  ctx.clearRect(0, 0, this.width, this.height);
-                }
-              } catch {}
-              return toDataURL.apply(this as any, arguments as any);
-            } as any;
-          } else if (cfg.mode === 'noise') {
-            // @ts-ignore - This code runs in browser context, CanvasRenderingContext2D exists
-            const getImageData = CanvasRenderingContext2D.prototype.getImageData;
-            // @ts-ignore - This code runs in browser context, CanvasRenderingContext2D exists
-            CanvasRenderingContext2D.prototype.getImageData = function (this: any, sx: number, sy: number, sw: number, sh: number) {
-              const imgData = getImageData.call(this as any, sx, sy, sw, sh);
-              for (let i = 0; i < imgData.data.length; i += 4) {
-                imgData.data[i] = imgData.data[i] + (rand(i) * 2 - 1);
-              }
-              return imgData;
-            } as any;
-          }
-        }, { mode: fingerprint.canvas.mode, seed });
-      }
-
-      // Permissions and geolocation (best effort)
-      if (Array.isArray(fingerprint.permissions) && fingerprint.permissions.includes('geolocation')) {
+      
+      // Geolocation permissions (if enabled)
+      if (normalizedFp.geo && normalizedFp.geo.enabled) {
         try {
           await page.browserContext().overridePermissions('https://www.google.com', ['geolocation']);
         } catch {}
-      }
-      if (fingerprint.geolocation) {
-        try {
-          const { latitude, longitude, accuracy } = fingerprint.geolocation;
-          await page.setGeolocation({ latitude, longitude, accuracy: accuracy ?? 100 });
-        } catch {}
-      }
-    } catch (fpError) {
-      console.warn(`[Browser ${sessionId}] Failed to apply fingerprint scripts:`, fpError);
-    }
-  }
-
-  // Hide automation indicators and inject fingerprint (only if page is still valid)
-  if (!page.isClosed()) {
-    try {
-      await page.evaluateOnNewDocument(() => {
-        // Remove webdriver property to hide automation
-        // @ts-ignore - This code runs in browser context, navigator exists
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => undefined,
-        });
-        
-        // Remove Chrome automation warning
-        delete (window as any).chrome;
-        (window as any).chrome = {
-          runtime: {},
-        };
-        
-        // Override permissions to avoid automation detection
-        // @ts-ignore - This code runs in browser context
-        const originalQuery = window.navigator.permissions.query;
-        // @ts-ignore - This code runs in browser context
-        window.navigator.permissions.query = (parameters: any) => 
-          parameters.name === 'notifications'
-            // @ts-ignore - Browser context
-            ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-            : originalQuery(parameters);
-      });
-    } catch (initError) {
-      // If init script fails, continue anyway - might work on next navigation
-      console.warn(`[Browser ${sessionId}] Failed to inject init script:`, initError);
-    }
-  }
-
-  // Inject fingerprint if provided (only if page is still valid)
-  if (fingerprint && !page.isClosed()) {
-    try {
-      await page.evaluateOnNewDocument((fp: any) => {
-        // Canvas fingerprint spoofing
-        if (fp.canvas) {
-          // @ts-ignore - This code runs in browser context, HTMLCanvasElement exists
-          const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-          // @ts-ignore - This code runs in browser context, HTMLCanvasElement exists
-          HTMLCanvasElement.prototype.toDataURL = function () {
-            return fp.canvas || originalToDataURL.apply(this as any, arguments as any);
-          };
+        if (fingerprint.geolocation) {
+          try {
+            const { latitude, longitude, accuracy } = fingerprint.geolocation;
+            await page.setGeolocation({ latitude, longitude, accuracy: accuracy ?? 100 });
+          } catch {}
         }
-
-        if (fp.webgl) {
-          // WebGL fingerprint spoofing would go here
-        }
-      }, fingerprint);
+      }
+      
+      // Inject comprehensive stealth script using CDP (like Python Selenium)
+      const stealthScript = buildStealthScript(normalizedFp);
+      try {
+        const client = await page.target().createCDPSession();
+        await client.send('Page.addScriptToEvaluateOnNewDocument', { source: stealthScript });
+        console.log(`[Browser ${sessionId}] Stealth fingerprint script injected via CDP`);
+      } catch (cdpError) {
+        // Fallback to evaluateOnNewDocument if CDP fails
+        await page.evaluateOnNewDocument(new Function(stealthScript) as any);
+        console.log(`[Browser ${sessionId}] Stealth fingerprint script injected via evaluateOnNewDocument`);
+      }
     } catch (fpError) {
       console.warn(`[Browser ${sessionId}] Failed to inject fingerprint:`, fpError);
+    }
+  } else if (!page.isClosed()) {
+    // Even without fingerprint, inject basic stealth (webdriver hiding)
+    try {
+      await page.evaluateOnNewDocument(() => {
+        // @ts-ignore - This code runs in browser context, navigator exists
+        Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
+        delete (window as any).chrome;
+        (window as any).chrome = { runtime: {} };
+      });
+    } catch (initError) {
+      console.warn(`[Browser ${sessionId}] Failed to inject basic stealth:`, initError);
     }
   }
 

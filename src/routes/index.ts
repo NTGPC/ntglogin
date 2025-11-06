@@ -11,6 +11,8 @@ import fingerprintRoutes from './fingerprintRoutes';
 import workflowRoutes from './workflowRoutes';
 import workflowsRouter from './workflows.routes';
 import n8nRouter from './n8n.routes';
+import insightsRoutes from '../insights/insights.routes';
+import changelogRoutes from './changelogRoutes';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -23,7 +25,7 @@ router.use('/auth', authRoutes);
 const enableAuth = process.env.REQUIRE_AUTH === 'true';
 const requireAuth = enableAuth 
   ? authenticate // Use auth
-  : (req: any, res: any, next: any) => next(); // Skip auth (development mode)
+  : (_req: any, _res: any, next: any) => next(); // Skip auth (development mode)
 
 router.use('/profiles', requireAuth, profileRoutes);
 router.use('/proxies', requireAuth, proxyRoutes);
@@ -35,14 +37,16 @@ router.use('/fingerprints', requireAuth, fingerprintRoutes);
 router.use('/workflows', requireAuth, workflowRoutes);
 router.use('/', requireAuth, workflowsRouter);
 router.use('/n8n', requireAuth, n8nRouter);
+router.use('/insights', insightsRoutes);
+router.use('/changelogs', requireAuth, changelogRoutes);
 
 // Health check
-router.get('/health', (req, res) => {
+router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Stats endpoint for dashboard
-router.get('/stats', async (req, res) => {
+router.get('/stats', async (_req, res) => {
   try {
     const [profiles, proxies, sessions, jobs] = await Promise.all([
       prisma.profile.count(),
