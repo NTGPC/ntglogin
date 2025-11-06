@@ -1,0 +1,178 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for admin authentication
+model User {
+  id         Int      @id @default(autoincrement())
+  username   String   @unique
+  password   String   // hashed password
+  role       String   @default("admin")
+  created_at DateTime @default(now())
+
+  @@map("users")
+}
+
+// Profile model - browser profiles
+model Profile {
+  id          Int       @id @default(autoincrement())
+  name        String
+  user_agent  String?
+  fingerprint Json?
+  fingerprintId Int?
+  fingerprintRef Fingerprint? @relation(fields: [fingerprintId], references: [id])
+  created_at  DateTime  @default(now())
+  
+  sessions    Session[]
+  executions  JobExecution[]
+  assignments WorkflowAssignment[]
+
+  @@index([name])
+  @@map("profiles")
+}
+
+// Fingerprint presets and normalized configs
+model Fingerprint {
+  id         Int       @id @default(autoincrement())
+  name       String?
+  data       Json
+  ownerId    Int?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  profiles   Profile[]
+
+  @@map("fingerprints")
+}
+
+// Proxy model
+model Proxy {
+  id         Int       @id @default(autoincrement())
+  host       String
+  port       Int
+  username   String?
+  password   String?
+  type       String    // "http", "socks5"
+  active     Boolean   @default(true)
+  created_at DateTime  @default(now())
+  
+  sessions   Session[]
+
+  @@index([active])
+  @@map("proxies")
+}
+
+// Session model - links profiles with proxies
+model Session {
+  id          Int            @id @default(autoincrement())
+  profile_id  Int
+  proxy_id    Int?
+  status      String         @default("idle") // "idle", "running", "stopped"
+  started_at  DateTime?
+  stopped_at  DateTime?
+  meta        Json?
+  
+  profile     Profile        @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  proxy       Proxy?         @relation(fields: [proxy_id], references: [id], onDelete: SetNull)
+  executions  JobExecution[]
+
+  @@index([profile_id])
+  @@index([status])
+  @@map("sessions")
+}
+
+// Job model - background tasks queue
+model Job {
+  id           Int            @id @default(autoincrement())
+  type         String
+  payload      Json
+  status       String         @default("queued") // "queued", "processing", "done", "failed"
+  attempts     Int            @default(0)
+  scheduled_at DateTime?
+  created_at   DateTime       @default(now())
+  
+  executions   JobExecution[]
+
+  @@index([status])
+  @@index([scheduled_at])
+  @@map("jobs")
+}
+
+// JobExecution model - individual job execution per profile
+model JobExecution {
+  id            Int       @id @default(autoincrement())
+  job_id        Int
+  profile_id    Int
+  session_id    Int?
+  // extended fields for n8n workflow integration
+  workflow_id   Int?
+  provider      String    @default("n8n")
+  externalId    String?
+  payload       Json?
+  status        String    @default("pending") // "pending", "running", "completed", "failed", (also used for n8n: queued/running/success/error/timeout)
+  started_at    DateTime?
+  completed_at  DateTime?
+  result        Json?
+  error         String?   @db.Text
+  created_at    DateTime  @default(now())
+
+  job           Job       @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  profile       Profile   @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+  session       Session?  @relation(fields: [session_id], references: [id], onDelete: SetNull)
+  workflow      Workflow? @relation(fields: [workflow_id], references: [id])
+
+  @@index([job_id])
+  @@index([profile_id])
+  @@index([status])
+  @@map("job_executions")
+}
+
+// Log model - application logs
+model Log {
+  id         Int      @id @default(autoincrement())
+  level      String   // "info", "warn", "error"
+  message    String
+  meta       Json?
+  created_at DateTime @default(now())
+
+  @@index([level])
+  @@index([created_at])
+  @@map("logs")
+}
+
+// Workflow model - drag-drop automation workflows
+model Workflow {
+  id             Int       @id @default(autoincrement())
+  name           String
+  data           Json?
+  // n8n integration fields
+  source         String    @default("local")
+  n8nWorkflowId  String?
+  description    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  assignments    WorkflowAssignment[]
+  executions     JobExecution[]
+
+  @@map("workflows")
+}
+
+model WorkflowAssignment {
+  id         Int      @id @default(autoincrement())
+  profileId  Int
+  workflowId Int
+  createdAt  DateTime @default(now())
+
+  profile    Profile  @relation(fields: [profileId], references: [id])
+  workflow   Workflow @relation(fields: [workflowId], references: [id])
+
+  @@unique([profileId, workflowId])
+}

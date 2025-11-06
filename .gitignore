@@ -1,0 +1,27 @@
+node_modules
+# Keep environment variables out of version control
+.env
+.env.local
+.env.*.local
+
+# Build output
+/dist
+/generated/prisma
+
+# Browser profiles - không nên commit lên git
+browser_profiles/
+*.user-data-dir
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
