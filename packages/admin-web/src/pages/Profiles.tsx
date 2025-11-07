@@ -565,6 +565,15 @@ export default function Profiles() {
       if (proxyMode === 'library' && proxyRefId) payload.proxyRefId = String(proxyRefId)
       if (proxyMode === 'manual' && proxyManual.host && proxyManual.port) payload.proxyManual = proxyManual
       if (macAddr !== 'Auto random (unique)') payload.macAddress = macAddr
+      
+      // New advanced fields (optional, will use defaults if not provided)
+      // These can be added to UI later if needed
+      // payload.timezoneId = timezoneId
+      // payload.language = language
+      // payload.hardwareConcurrency = hardwareConcurrency
+      // payload.deviceMemory = deviceMemory
+      // payload.geoLatitude = geoLatitude
+      // payload.geoLongitude = geoLongitude
 
       if (editingProfile) {
         await api.updateProfile(editingProfile.id, payload)
@@ -639,6 +648,7 @@ export default function Profiles() {
   )
 
   const totalPages = Math.ceil(filteredProfiles.length / itemsPerPage)
+
 
   return (
     <div className="space-y-6">
@@ -852,10 +862,11 @@ export default function Profiles() {
                             setDialogOpen(true)
                           } catch (e) {
                             // Fallback to cached profile if API fails
-                            setEditingProfile(profile)
-                            setDialogOpen(true)
+                          setEditingProfile(profile)
+                          setDialogOpen(true)
                           }
                         }}
+                        title="Edit (Old Modal)"
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -1344,6 +1355,7 @@ export default function Profiles() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   )
 }

@@ -16,5 +16,13 @@ export default defineConfig({
     open: true,
   },
   clearScreen: false,
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    testTimeout: 5000,
+    hookTimeout: 5000,
+    teardownTimeout: 5000,
+  },
 })
 

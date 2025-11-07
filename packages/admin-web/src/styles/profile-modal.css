@@ -1,7 +1,13 @@
 /* modal custom */
 
+.profile-modal {
+  max-width: calc(100vw - 64px) !important;
+  width: calc(100vw - 64px) !important;
+}
+
 .profile-modal .modal-dialog {
-  max-width: 880px;
+  max-width: 1600px !important;
+  width: 100% !important;
 }
 
 .profile-modal .modal-body {

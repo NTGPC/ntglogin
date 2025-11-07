@@ -28,13 +28,16 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
   ({ className, children, onClose, ...props }, ref) => {
+    const isProfileModal = className?.includes('profile-modal')
     return (
       <div
         ref={ref}
         className={cn(
-          'relative z-50 grid w-full max-w-lg gap-4 border bg-background p-6 shadow-lg sm:rounded-lg',
+          'relative z-50 grid w-full gap-4 border bg-background p-6 shadow-lg sm:rounded-lg',
+          isProfileModal ? 'max-w-[calc(100vw-64px)]' : 'max-w-lg',
           className
         )}
+        style={isProfileModal ? { maxWidth: '1600px', width: 'calc(100vw - 64px)' } : undefined}
         {...props}
       >
         {onClose && (

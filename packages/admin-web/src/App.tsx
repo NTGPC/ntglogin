@@ -10,6 +10,7 @@ import Jobs from './pages/Jobs'
 import Executions from './pages/Executions'
 import Workflows from './pages/Workflows'
 import WorkflowEditor from './pages/WorkflowEditor'
+import ProfileEditor from './components/ProfileEditor/ProfileEditor.jsx'
 import { api } from './lib/api'
 
 function App() {
@@ -51,6 +52,7 @@ function App() {
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="profiles" element={<Profiles />} />
+          <Route path="profiles/editor" element={<ProfileEditor />} />
           <Route path="proxies" element={<Proxies />} />
           <Route path="fingerprints" element={<Fingerprints />} />
           <Route path="sessions" element={<Sessions />} />
