@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import * as sessionService from '../services/sessionService';
 import { getOpenPageUrls } from '../services/browserService';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
-export const getAll = asyncHandler(async (req: Request, res: Response) => {
+export const getAll = asyncHandler(async (_req: Request, res: Response) => {
   const sessions = await sessionService.getAllSessions();
   res.json({
     success: true,
@@ -90,7 +90,7 @@ export const captureTabs = asyncHandler(async (req: Request, res: Response) => {
   }
   const urls = await getOpenPageUrls(id);
   // Update profile fingerprint JSON with savedTabs
-  const profile = await sessionService.updateProfileFingerprint(session.profile_id, { savedTabs: urls });
+  await sessionService.updateProfileFingerprint(session.profile_id, { savedTabs: urls });
   res.json({ success: true, data: { urls, profileId: session.profile_id } });
 });
 

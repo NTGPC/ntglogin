@@ -65,6 +65,16 @@ def launch(profile, headless=False):
     chrome_opts.add_experimental_option("useAutomationExtension", False)
     chrome_opts.add_argument("--disable-blink-features=AutomationControlled")
     
+    # Media stream and WebRTC flags
+    chrome_opts.add_argument("--use-fake-device-for-media-stream")
+    chrome_opts.add_argument("--use-fake-ui-for-media-stream")
+    chrome_opts.add_argument("--disable-webgpu")
+    chrome_opts.add_argument("--disable-features=WebRtcHideLocalIpsWithMdns")
+    chrome_opts.add_argument("--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
+    chrome_opts.add_argument("--no-first-run")
+    chrome_opts.add_argument("--no-default-browser-check")
+    chrome_opts.add_argument("--autoplay-policy=no-user-gesture-required")
+    
     # WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader)
     # Check if profile wants to use SwiftShader renderer
     use_swiftshader = profile.get("webgl", {}).get("useSwiftShader", False)
@@ -82,11 +92,29 @@ def launch(profile, headless=False):
     caps = DesiredCapabilities.CHROME.copy()
     driver = webdriver.Chrome(service=service, options=chrome_opts, desired_capabilities=caps)
     
+    # Load fingerprint patch and audio spoof scripts
+    fingerprint_patch_path = os.path.join(os.path.dirname(__file__), "..", "src", "inject", "fingerprintPatch.js")
+    audio_spoof_path = os.path.join(os.path.dirname(__file__), "..", "src", "inject", "audioSpoof.js")
+    fingerprint_patch_script = ""
+    audio_spoof_script = ""
+    if os.path.exists(fingerprint_patch_path):
+        with open(fingerprint_patch_path, "r", encoding="utf-8") as f:
+            fingerprint_patch_script = f.read()
+    if os.path.exists(audio_spoof_path):
+        with open(audio_spoof_path, "r", encoding="utf-8") as f:
+            audio_spoof_script = f.read()
+    
     # Build injection script with profile injected
     inject_script = build_inject_script(profile)
     
-    # Add script to evaluate on new document (before any page script)
+    # Add script to evaluate on new document (before any page script) - inject as early as possible
     try:
+        # Inject scripts in order: fingerprint patch, audio spoof, then main script
+        if fingerprint_patch_script:
+            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": fingerprint_patch_script})
+        if audio_spoof_script:
+            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": audio_spoof_script})
+        # Then inject main script
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": inject_script})
     except Exception as e:
         print("CDP injection failed:", e)

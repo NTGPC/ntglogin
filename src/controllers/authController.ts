@@ -1,9 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import * as userService from '../services/userService';
 import { generateToken } from '../utils/auth';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
-export const login = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const login = asyncHandler(async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   // Development fallback: if auth not required, return dummy success to avoid 403 in editor
@@ -30,7 +30,7 @@ export const login = asyncHandler(async (req: Request, res: Response, next: Next
 
   const token = generateToken(user.id, user.username);
 
-  res.json({
+  return res.json({
     success: true,
     message: 'Login successful',
     data: {
@@ -44,7 +44,7 @@ export const login = asyncHandler(async (req: Request, res: Response, next: Next
   });
 });
 
-export const register = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+export const register = asyncHandler(async (req: Request, res: Response) => {
   const { username, password, role } = req.body;
 
   if (!username || !password) {

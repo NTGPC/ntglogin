@@ -16,7 +16,7 @@
     webrtc: { useMainIP: false },
     seedFallback: 1234567
   };
-
+  
   // ---------- xorshift32 PRNG ----------
   function xorshift32(seed) {
     let x = (seed >>> 0) || 123456789;
@@ -29,10 +29,10 @@
   }
   const seed = (FP && (FP.seed || FP.seedFallback || 12345)) >>> 0;
   const rand = xorshift32(seed);
-
+  
   // helpers
   function randInt(min, max){ return Math.floor(rand()*(max-min+1))+min; }
-
+  
   // ---------- navigator props ----------
   try {
     if (typeof navigator !== 'undefined') {
@@ -49,7 +49,7 @@
       try { Object.defineProperty(navigator, 'languages', { get: () => fakeLangs, configurable:true }); } catch(e){}
     }
   } catch(e){}
-
+  
   // ---------- Canvas patch ----------
   (function canvasPatch(){
     const mode = (FP.canvas && FP.canvas.mode) || 'Noise';
@@ -83,17 +83,17 @@
       return ctx;
     };
   })();
-
+  
   // ---------- WebGL / WebGL2 & OffscreenCanvas ----------
   (function webglPatch(){
     const VENDOR = (FP.webgl && FP.webgl.vendor) || "PolyVendor Inc.";
     const RENDER = (FP.webgl && FP.webgl.renderer) || "PolyRenderer 1.0";
     const REAL   = (FP.webgl && FP.webgl.metaMode === 'Real');
-
+    
     function hardDefine(obj, name, fn){
       try { Object.defineProperty(obj, name, { value: fn, configurable:true }); } catch(e){ try{ obj[name] = fn; } catch(_){} }
     }
-
+    
     function patchProto(proto){
       if (!proto) return;
       
@@ -102,7 +102,7 @@
       const orig_getSupported  = proto.getSupportedExtensions;
       const orig_readPixels    = proto.readPixels;
       const orig_prec          = proto.getShaderPrecisionFormat;
-
+      
       hardDefine(proto, 'getParameter', function(param){
         try {
           if (!REAL) {
@@ -112,16 +112,16 @@
         } catch(e){}
         try { return orig_getParameter.call(this, param); } catch(e){ return null; }
       });
-
+      
       hardDefine(proto, 'getExtension', function(name){
         try { if (name && /debug/i.test(name)) return null; } catch(e){}
         return orig_getExtension.call(this, name);
       });
-
+      
       hardDefine(proto, 'getSupportedExtensions', function(){
         try {
           const list = orig_getSupported && orig_getSupported.call(this) || [];
-          return list.filter(e => !/debug|unmasked/i.test(e));
+        return list.filter(e => !/debug|unmasked/i.test(e));
         } catch(e){ return []; }
       });
 
@@ -133,7 +133,7 @@
           }
         } catch(e){}
       });
-
+      
       hardDefine(proto, 'getShaderPrecisionFormat', function(shaderType, precisionType){
         try {
           const orig = orig_prec.call(this, shaderType, precisionType);
@@ -142,10 +142,10 @@
         } catch(e){ return { rangeMin:0, rangeMax:0, precision:8 }; }
       });
     }
-
+    
     if (window.WebGLRenderingContext) patchProto(WebGLRenderingContext.prototype);
     if (window.WebGL2RenderingContext) patchProto(WebGL2RenderingContext.prototype);
-
+    
     // OffscreenCanvas
     try {
       if (window.OffscreenCanvas && OffscreenCanvas.prototype.getContext) {
@@ -153,84 +153,84 @@
         Object.defineProperty(OffscreenCanvas.prototype, 'getContext', {
           value: function(type, opts){
             const ctx = origOff.call(this, type, opts);
-            try {
-              const p = Object.getPrototypeOf(ctx);
+        try {
+          const p = Object.getPrototypeOf(ctx);
               if (p) patchProto(p);
             } catch(e){}
-            return ctx;
+        return ctx;
           }, configurable:true
-        });
-      }
+      });
+    }
     } catch(e){}
   })();
-
+  
   // ---------- Audio: OfflineAudioContext & Analyser ----------
   (function audioPatch(){
     const s = seed >>> 0;
-    try {
-      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-      if (OAC && OAC.prototype && OAC.prototype.startRendering) {
-        const origStart = OAC.prototype.startRendering;
-        Object.defineProperty(OAC.prototype, 'startRendering', {
+      try {
+        const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (OAC && OAC.prototype && OAC.prototype.startRendering) {
+          const origStart = OAC.prototype.startRendering;
+          Object.defineProperty(OAC.prototype, 'startRendering', {
           value: function(){
             const prom = origStart.apply(this, arguments);
             return Promise.resolve(prom).then(buf => {
-              try {
+                try {
                 const ch = buf.numberOfChannels || 1;
                 for (let c=0;c<ch;c++){
                   const arr = buf.getChannelData(c);
                   for (let i=0;i<arr.length;i+=128) arr[i] = arr[i] + ((s % 9) - 4) * 1e-7;
-                }
+                  }
               } catch(e){}
-              return buf;
-            });
+                return buf;
+              });
           }, configurable:true
-        });
-      }
+          });
+        }
     } catch(e){}
-
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC && AC.prototype && AC.prototype.createAnalyser) {
-        const origCreate = AC.prototype.createAnalyser;
-        Object.defineProperty(AC.prototype, 'createAnalyser', {
+      
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC && AC.prototype && AC.prototype.createAnalyser) {
+          const origCreate = AC.prototype.createAnalyser;
+          Object.defineProperty(AC.prototype, 'createAnalyser', {
           value: function(){
-            const an = origCreate.call(this);
-            if (an && an.getFloatTimeDomainData) {
-              const orig = an.getFloatTimeDomainData.bind(an);
+              const an = origCreate.call(this);
+              if (an && an.getFloatTimeDomainData) {
+                const orig = an.getFloatTimeDomainData.bind(an);
               an.getFloatTimeDomainData = function(arr){
-                orig(arr);
+                  orig(arr);
                 for (let i=0;i<arr.length;i+=128) arr[i] = arr[i] + ((s % 7) * 1e-7);
-              };
-            }
-            return an;
+                };
+              }
+              return an;
           }, configurable:true
-        });
-      }
+          });
+        }
     } catch(e){}
   })();
-
+  
   // ---------- Client rects ----------
   (function rectsPatch(){
     try {
-      const elProto = Element.prototype;
+    const elProto = Element.prototype;
       const origRect = elProto.getBoundingClientRect;
       Object.defineProperty(elProto, 'getBoundingClientRect', {
         value: function(){
           const r = origRect.call(this);
           if (FP.clientRects && FP.clientRects.mode === 'Noise') {
             const jitter = ((seed % 5) - 2) / 100;
-            return {
-              x: r.x + jitter, y: r.y + jitter, width: r.width + jitter, height: r.height + jitter,
-              top: r.top + jitter, left: r.left + jitter, right: r.right + jitter, bottom: r.bottom + jitter
-            };
+        return {
+          x: r.x + jitter, y: r.y + jitter, width: r.width + jitter, height: r.height + jitter,
+          top: r.top + jitter, left: r.left + jitter, right: r.right + jitter, bottom: r.bottom + jitter
+        };
           }
           return r;
         }, configurable:true
       });
     } catch(e){}
   })();
-
+  
   // ---------- WebRTC filter ----------
   (function webrtcPatch(){
     try {
@@ -259,7 +259,7 @@
       window.RTCPeerConnection = Fake;
     } catch(e){}
   })();
-
+  
   // ---------- Geolocation ----------
   (function geoPatch(){
     try {
@@ -267,16 +267,16 @@
         const fakePos = { coords: { latitude: FP.geo.lat || 10.762622, longitude: FP.geo.lon || 106.660172, accuracy: 50 } };
         navigator.geolocation.getCurrentPosition = function(success){
           setTimeout(() => success(fakePos), 10);
-        };
+          };
         navigator.geolocation.watchPosition = function(success){
-          const id = Math.floor(rand()*100000);
-          setTimeout(()=> success(fakePos), 10);
-          return id;
-        };
-      }
-    } catch(e){}
+            const id = Math.floor(rand()*100000);
+            setTimeout(()=> success(fakePos), 10);
+            return id;
+          };
+        }
+      } catch(e){}
   })();
-
+  
   // mark injected
   try { Object.defineProperty(window, '__INJECTED_FINGERPRINT__', { value: FP, configurable:false }); } catch(e){}
 })();

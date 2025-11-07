@@ -1,7 +1,16 @@
 import puppeteer, { Browser } from 'puppeteer';
-import { chromium, BrowserContext, Page } from 'playwright';
+import { chromium, Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
+
+// Path to fingerprint patch script (for Playwright)
+const fingerprintPatchPath = path.join(__dirname, '../inject/fingerprintPatch.js');
+// Path to audio spoof script (for Playwright)
+const audioSpoofPath = path.join(__dirname, '../inject/audioSpoof.js');
+
+// Load script contents (for Puppeteer)
+const fingerprintPatchScript = fs.readFileSync(fingerprintPatchPath, 'utf-8');
+const audioSpoofScript = fs.readFileSync(audioSpoofPath, 'utf-8');
 
 // Store browser instances per session (Puppeteer Browser or Playwright Context)
 const browserInstances = new Map<number, any>();
@@ -449,6 +458,14 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         '--disable-notifications',
         '--disable-popup-blocking',
         '--restore-last-session',
+        '--use-fake-device-for-media-stream',
+        '--use-fake-ui-for-media-stream',
+        '--disable-webgpu',
+        '--disable-features=WebRtcHideLocalIpsWithMdns',
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--autoplay-policy=no-user-gesture-required',
       ],
     };
     if (userAgent) contextOptions.userAgent = userAgent;
@@ -513,11 +530,15 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
             webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : undefined),
           };
           const stealthScript = buildStealthScript(normalizedFp);
-          // Inject into all existing and future pages
+          // Inject scripts as early as possible: fingerprint patch, audio spoof, then stealth script
           for (const p of context.pages()) {
+            await p.addInitScript({ path: fingerprintPatchPath });
+            await p.addInitScript({ path: audioSpoofPath });
             await p.addInitScript(stealthScript);
           }
           context.on('page', (newPage) => {
+            newPage.addInitScript({ path: fingerprintPatchPath }).catch(() => {});
+            newPage.addInitScript({ path: audioSpoofPath }).catch(() => {});
             newPage.addInitScript(stealthScript).catch(() => {});
           });
           console.log(`[Browser ${sessionId}] Stealth fingerprint injected for Playwright context`);
@@ -546,6 +567,14 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
     '--disable-notifications',
     '--disable-popup-blocking',
     `--user-data-dir=${profileDir}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+    '--disable-webgpu',
+    '--disable-features=WebRtcHideLocalIpsWithMdns',
+    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--autoplay-policy=no-user-gesture-required',
   ];
   // Only allow restoring last session when no proxy auth is required, otherwise
   // Chrome will attempt to load tabs before we can authenticate and show a dialog.
@@ -720,23 +749,38 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         }
       }
       
-      // Inject comprehensive stealth script using CDP (like Python Selenium)
+      // Inject scripts as early as possible: fingerprint patch, audio spoof, then stealth script using CDP (like Python Selenium)
       const stealthScript = buildStealthScript(normalizedFp);
       try {
         const client = await page.target().createCDPSession();
+        // Inject scripts in order: fingerprint patch, audio spoof, then stealth script
+        await client.send('Page.addScriptToEvaluateOnNewDocument', { source: fingerprintPatchScript });
+        await client.send('Page.addScriptToEvaluateOnNewDocument', { source: audioSpoofScript });
         await client.send('Page.addScriptToEvaluateOnNewDocument', { source: stealthScript });
-        console.log(`[Browser ${sessionId}] Stealth fingerprint script injected via CDP`);
+        console.log(`[Browser ${sessionId}] Fingerprint patch, audio spoof, and stealth script injected via CDP`);
       } catch (cdpError) {
         // Fallback to evaluateOnNewDocument if CDP fails
+        await page.evaluateOnNewDocument(new Function(fingerprintPatchScript) as any);
+        await page.evaluateOnNewDocument(new Function(audioSpoofScript) as any);
         await page.evaluateOnNewDocument(new Function(stealthScript) as any);
-        console.log(`[Browser ${sessionId}] Stealth fingerprint script injected via evaluateOnNewDocument`);
+        console.log(`[Browser ${sessionId}] Fingerprint patch, audio spoof, and stealth script injected via evaluateOnNewDocument`);
       }
     } catch (fpError) {
       console.warn(`[Browser ${sessionId}] Failed to inject fingerprint:`, fpError);
     }
   } else if (!page.isClosed()) {
-    // Even without fingerprint, inject basic stealth (webdriver hiding)
+    // Even without fingerprint, inject fingerprint patch, audio spoof, and basic stealth (webdriver hiding)
     try {
+      // Inject fingerprint patch and audio spoof
+      try {
+        const client = await page.target().createCDPSession();
+        await client.send('Page.addScriptToEvaluateOnNewDocument', { source: fingerprintPatchScript });
+        await client.send('Page.addScriptToEvaluateOnNewDocument', { source: audioSpoofScript });
+      } catch (cdpError) {
+        await page.evaluateOnNewDocument(new Function(fingerprintPatchScript) as any);
+        await page.evaluateOnNewDocument(new Function(audioSpoofScript) as any);
+      }
+      // Inject basic stealth
       await page.evaluateOnNewDocument(() => {
         // @ts-ignore - This code runs in browser context, navigator exists
         Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
@@ -744,7 +788,7 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         (window as any).chrome = { runtime: {} };
       });
     } catch (initError) {
-      console.warn(`[Browser ${sessionId}] Failed to inject basic stealth:`, initError);
+      console.warn(`[Browser ${sessionId}] Failed to inject fingerprint patch, audio spoof, or basic stealth:`, initError);
     }
   }
 

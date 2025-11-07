@@ -7,7 +7,8 @@ const router = Router();
 router.use((req, res, next) => {
   const allowed = (process.env.ALLOW_EXTERNAL_N8N === 'true') || isLocalRequest(req);
   if (!allowed) {
-    return res.status(403).json({ message: 'Forbidden: local access only' });
+    res.status(403).json({ message: 'Forbidden: local access only' });
+    return;
   }
   next();
 });
@@ -25,7 +26,10 @@ function isLocalRequest(req: Request): boolean {
 // POST /api/n8n/webhook
 router.post('/webhook', async (req: Request, res: Response) => {
   const { path, payload, headers } = req.body || {};
-  if (!path) return res.status(400).json({ message: 'Missing path' });
+  if (!path) {
+    res.status(400).json({ message: 'Missing path' });
+    return;
+  }
   try {
     const data = await n8n.callWebhook(String(path), payload, headers);
     res.json(data);
@@ -38,7 +42,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
 router.post('/workflows/:workflowId/execute', async (req: Request, res: Response) => {
   const { workflowId } = req.params;
   const { payload } = req.body || {};
-  if (!workflowId) return res.status(400).json({ message: 'Missing workflowId' });
+  if (!workflowId) {
+    res.status(400).json({ message: 'Missing workflowId' });
+    return;
+  }
   try {
     const { executionId } = await n8n.execWorkflow(String(workflowId), payload);
     res.json({ executionId });
@@ -50,7 +57,10 @@ router.post('/workflows/:workflowId/execute', async (req: Request, res: Response
 // GET /api/n8n/executions/:id
 router.get('/executions/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!id) return res.status(400).json({ message: 'Missing execution id' });
+  if (!id) {
+    res.status(400).json({ message: 'Missing execution id' });
+    return;
+  }
   try {
     const data = await n8n.getExecution(String(id));
     res.json(data);

@@ -2,20 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/auth';
 import { AppError } from '../utils/errorHandler';
 
-// Extend Express Request type to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: number;
-        username: string;
-      };
-    }
-  }
-}
 
 // JWT authentication middleware
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+export const authenticate = (req: Request, _res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -26,7 +15,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
     const decoded = verifyToken(token);
 
-    req.user = {
+    (req as any).user = {
       userId: decoded.userId,
       username: decoded.username,
     };

@@ -18,7 +18,7 @@ export const createChangelog = async (data: ChangelogData) => {
       type: data.type,
       category: data.category || null,
       description: data.description || null,
-      files: data.files ? data.files : null,
+      files: data.files ? data.files : undefined,
       author: data.author || null,
     },
   });

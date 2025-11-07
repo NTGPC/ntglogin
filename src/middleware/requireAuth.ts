@@ -19,7 +19,7 @@ declare global {
  */
 export async function requireAuth(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   try {

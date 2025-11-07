@@ -8,7 +8,7 @@ type Role = "Admin" | "Editor" | "Viewer";
  * Roles có hierarchy: Admin > Editor > Viewer
  */
 export function requireRole(allowedRoles: Role[]) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       return next(new AppError("Authentication required", 401));
     }

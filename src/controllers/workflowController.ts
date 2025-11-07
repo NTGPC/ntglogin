@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import * as workflowService from '../services/workflowService';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
-export const getAll = asyncHandler(async (req: Request, res: Response) => {
+export const getAll = asyncHandler(async (_req: Request, res: Response) => {
   const workflows = await workflowService.getAllWorkflows();
 
   res.json({
@@ -169,7 +169,7 @@ export const test = asyncHandler(async (req: Request, res: Response) => {
 
 export const execute = asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
-  const { profileIds, vars, payload } = req.body;
+  const { profileIds, vars } = req.body;
 
   if (!profileIds || !Array.isArray(profileIds) || profileIds.length === 0) {
     throw new AppError('profileIds array is required', 400);
@@ -198,8 +198,7 @@ export const execute = asyncHandler(async (req: Request, res: Response) => {
   const created = [];
 
   // Try to enqueue to worker queue (check if worker queue is available)
-  const WORKER_QUEUE_URL = process.env.WORKER_QUEUE_URL;
-  const useWorkerQueue = !!WORKER_QUEUE_URL;
+  // const WORKER_QUEUE_URL = process.env.WORKER_QUEUE_URL;
 
   for (const profileId of profileIds) {
     // Create Job
@@ -233,6 +232,7 @@ export const execute = asyncHandler(async (req: Request, res: Response) => {
     try {
       // Import and run processor directly
       // Use relative path from backend src to worker src
+      // @ts-ignore - Dynamic import may not resolve at compile time
       const workflowRunProcessor = (await import('../../../packages/worker/src/processors/workflowRunProcessor')).default;
       
       console.log(`🔄 [Workflow] Starting processor for job ${job.id}, profile ${profileId}, execution ${execution.id}`);
@@ -245,8 +245,8 @@ export const execute = asyncHandler(async (req: Request, res: Response) => {
           vars: vars || {},
           executionId: execution.id,
         },
-      }).then((result) => {
-        console.log(`✅ [Workflow] Completed job ${job.id}:`, result);
+      }).then((_result: any) => {
+        console.log(`✅ [Workflow] Completed job ${job.id}`);
       }).catch((err: any) => {
         console.error(`❌ [Workflow] Failed to process workflow job ${job.id}:`, err?.message || err);
         console.error(`❌ [Workflow] Error stack:`, err?.stack);
@@ -384,6 +384,7 @@ export const runWorkflowForProfile = asyncHandler(async (req: Request, res: Resp
 
   // Import and run profileStartProcessor
   try {
+    // @ts-ignore - Dynamic import may not resolve at compile time
     const profileStartProcessor = (await import('../../../packages/worker/src/processors/profileStartProcessor')).default;
     
     console.log(`🔄 [Workflow] Starting profile ${profileId} with workflow ${workflowId}`);
@@ -398,8 +399,8 @@ export const runWorkflowForProfile = asyncHandler(async (req: Request, res: Resp
         workflowId: Number(workflowId),
         vars,
       },
-    }).then((result) => {
-      console.log(`✅ [Workflow] Profile started successfully:`, result);
+    }).then((_result: any) => {
+      console.log(`✅ [Workflow] Profile started successfully`);
     }).catch((err: any) => {
       console.error(`❌ [Workflow] Failed to start profile:`, err?.message || err);
       console.error(`❌ [Workflow] Error stack:`, err?.stack);

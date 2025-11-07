@@ -56,7 +56,7 @@ app.get('/diagnostics', (_req, res) => {
 });
 
 // Root endpoint
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({
     message: 'NTG Login API Server',
     version: '1.0.0',

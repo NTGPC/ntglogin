@@ -136,12 +136,51 @@ export const createSession = async (data: {
       }
     }
 
+    // Build fingerprint from profile data
+    let fingerprint: any = profile.fingerprintJson || profile.fingerprint
+    if (!fingerprint && (profile.canvasMode || profile.osName)) {
+      const { build: buildFingerprint } = await import('./fingerprintService')
+      fingerprint = buildFingerprint({
+        osName: profile.osName as any,
+        osArch: (profile.osArch as any) || 'x64',
+        browserVersion: profile.browserVersion || 136,
+        screenWidth: profile.screenWidth ?? 1920,
+        screenHeight: profile.screenHeight ?? 1080,
+        canvasMode: (profile.canvasMode || 'Noise') as 'Noise' | 'Off' | 'Block',
+        clientRectsMode: (profile.clientRectsMode || 'Off') as 'Off' | 'Noise',
+        audioCtxMode: (profile.audioCtxMode || 'Off') as 'Off' | 'Noise',
+        webglImageMode: (profile.webglImageMode || 'Off') as 'Off' | 'Noise',
+        webglMetaMode: (profile.webglMetaMode || 'Mask') as 'Mask' | 'Real',
+        geoEnabled: profile.geoEnabled ?? false,
+        geoLatitude: (profile as any).geoLatitude,
+        geoLongitude: (profile as any).geoLongitude,
+        webrtcMainIP: profile.webrtcMainIP ?? false,
+        proxyRefId: profile.proxyRefId ?? null,
+        proxyManual: (profile.proxyManual as any) ?? null,
+        ua: profile.user_agent || profile.userAgent || '',
+        mac: profile.macAddress || '',
+        timezoneId: (profile as any).timezoneId,
+        language: (profile as any).language,
+        hardwareConcurrency: (profile as any).hardwareConcurrency,
+        deviceMemory: (profile as any).deviceMemory,
+        profileId: profile.id,
+        seed: profile.id,
+      })
+    } else if (fingerprint && !fingerprint.seed) {
+      // Ensure fingerprint has seed for deterministic noise
+      fingerprint = {
+        ...fingerprint,
+        profileId: profile.id,
+        seed: fingerprint.seed || profile.id,
+      }
+    }
+
     // Default: use local Puppeteer (ensures proxy username/password are applied)
     await launchBrowser({
       profileId: profile.id,
       sessionId: session.id,
-      userAgent: profile.user_agent || undefined,
-      fingerprint: profile.fingerprint as any || undefined,
+      userAgent: profile.user_agent || profile.userAgent || undefined,
+      fingerprint: fingerprint,
       proxy: proxyConfig,
     });
 

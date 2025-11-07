@@ -7,7 +7,7 @@
  * - getKeywordSeeds: Lấy keywords từ captions và comments
  */
 
-export async function getSummary(pageId: string): Promise<any> {
+export async function getSummary(_pageId: string): Promise<any> {
   // TODO: Implement
   // - Gọi Graph API thông qua graph.client.ts
   // - Đọc PAGE access token từ DB theo pageId
@@ -16,9 +16,9 @@ export async function getSummary(pageId: string): Promise<any> {
 }
 
 export async function getTopPosts(
-  pageId: string,
-  limit: number,
-  topK: number
+  _pageId: string,
+  _limit: number,
+  _topK: number
 ): Promise<any[]> {
   // TODO: Implement
   // - Tính score: 0.3*impressions + 0.5*engaged + 0.2*video_views
@@ -27,9 +27,9 @@ export async function getTopPosts(
 }
 
 export async function getKeywordSeeds(
-  pageId: string,
-  limitPosts: number,
-  topK: number
+  _pageId: string,
+  _limitPosts: number,
+  _topK: number
 ): Promise<any[]> {
   // TODO: Implement
   // - Tokenize Vietnamese từ caption + comments

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import * as jobService from '../services/jobService';
 import * as jobExecutionService from '../services/jobExecutionService';
 import { AppError, asyncHandler } from '../utils/errorHandler';

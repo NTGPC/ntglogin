@@ -1,8 +1,8 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import * as proxyService from '../services/proxyService';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
-export const getAll = asyncHandler(async (req: Request, res: Response) => {
+export const getAll = asyncHandler(async (_req: Request, res: Response) => {
   const proxies = await proxyService.getAllProxies();
   res.json({
     success: true,

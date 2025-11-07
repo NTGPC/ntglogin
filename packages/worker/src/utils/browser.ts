@@ -5,6 +5,11 @@ import * as fs from 'fs';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 
+// Path to fingerprint patch script (for Playwright)
+const fingerprintPatchPath = path.join(__dirname, '../../../src/inject/fingerprintPatch.js');
+// Path to audio spoof script (for Playwright)
+const audioSpoofPath = path.join(__dirname, '../../../src/inject/audioSpoof.js');
+
 export async function openProfileContext(
   userDataDir: string,
   channel: 'chrome' | 'chromium' | 'msedge' = 'chrome'
@@ -24,12 +29,28 @@ export async function openProfileContext(
       '--disable-infobars',
       '--disable-notifications',
       '--disable-popup-blocking',
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+      '--disable-webgpu',
+      '--disable-features=WebRtcHideLocalIpsWithMdns',
+      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+      '--autoplay-policy=no-user-gesture-required',
     ],
   });
 
   // Luôn tạo 1 tab mới để điều khiển
   const page: Page = await ctx.newPage();
   await page.bringToFront();
+
+  // Inject scripts as early as possible for all pages (using path for Playwright)
+  for (const p of ctx.pages()) {
+    await p.addInitScript({ path: fingerprintPatchPath });
+    await p.addInitScript({ path: audioSpoofPath });
+  }
+  ctx.on('page', (newPage) => {
+    newPage.addInitScript({ path: fingerprintPatchPath }).catch(() => {});
+    newPage.addInitScript({ path: audioSpoofPath }).catch(() => {});
+  });
 
   return { ctx, page };
 }
@@ -85,6 +106,12 @@ export class Browser {
         '--disable-infobars',
         '--disable-notifications',
         '--disable-popup-blocking',
+        '--use-fake-device-for-media-stream',
+        '--use-fake-ui-for-media-stream',
+        '--disable-webgpu',
+        '--disable-features=WebRtcHideLocalIpsWithMdns',
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+        '--autoplay-policy=no-user-gesture-required',
       ],
       viewport: { width: 1280, height: 720 },
       userAgent: profile.user_agent || undefined,
@@ -143,6 +170,16 @@ export class Browser {
     // Luôn tạo 1 tab mới để điều khiển
     this.page = await this.context.newPage();
     await this.page.bringToFront();
+
+    // Inject scripts as early as possible for all pages (using path for Playwright)
+    for (const p of this.context.pages()) {
+      await p.addInitScript({ path: fingerprintPatchPath });
+      await p.addInitScript({ path: audioSpoofPath });
+    }
+    this.context.on('page', (newPage) => {
+      newPage.addInitScript({ path: fingerprintPatchPath }).catch(() => {});
+      newPage.addInitScript({ path: audioSpoofPath }).catch(() => {});
+    });
 
     // Apply fingerprint injection if needed
     if (profile.fingerprint) {

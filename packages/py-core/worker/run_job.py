@@ -6,6 +6,7 @@ import time
 import traceback
 from datetime import datetime
 from typing import Dict, Any
+from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
 from sqlalchemy.orm import Session
 from db.database import SessionLocal
@@ -14,6 +15,22 @@ from services.fingerprint_injection import build_injection
 from services.crypto import decrypt
 from services.storage import save_screenshot
 from worker.workflow_executor import execute_workflow
+
+# Load fingerprint patch and audio spoof scripts
+_fingerprint_patch_path = Path(__file__).parent.parent.parent / "src" / "inject" / "fingerprintPatch.js"
+_audio_spoof_path = Path(__file__).parent.parent.parent / "src" / "inject" / "audioSpoof.js"
+
+if _fingerprint_patch_path.exists():
+    with open(_fingerprint_patch_path, 'r', encoding='utf-8') as f:
+        FINGERPRINT_PATCH_SCRIPT = f.read()
+else:
+    FINGERPRINT_PATCH_SCRIPT = ""
+
+if _audio_spoof_path.exists():
+    with open(_audio_spoof_path, 'r', encoding='utf-8') as f:
+        AUDIO_SPOOF_SCRIPT = f.read()
+else:
+    AUDIO_SPOOF_SCRIPT = ""
 
 # Import socketio for emitting events
 import socketio
@@ -219,6 +236,14 @@ def handle_run_job_execution(payload: Dict[str, Any], db: Session):
                 "--disable-blink-features=AutomationControlled",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
+                "--use-fake-device-for-media-stream",
+                "--use-fake-ui-for-media-stream",
+                "--disable-webgpu",
+                "--disable-features=WebRtcHideLocalIpsWithMdns",
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--autoplay-policy=no-user-gesture-required",
             ]
         )
         
@@ -236,7 +261,11 @@ def handle_run_job_execution(payload: Dict[str, Any], db: Session):
         
         context = browser.new_context(**context_options)
         
-        # Add fingerprint injection
+        # Add scripts as early as possible: fingerprint patch, audio spoof, then fingerprint injection
+        if FINGERPRINT_PATCH_SCRIPT:
+            context.add_init_script(FINGERPRINT_PATCH_SCRIPT)
+        if AUDIO_SPOOF_SCRIPT:
+            context.add_init_script(AUDIO_SPOOF_SCRIPT)
         context.add_init_script(injection_script)
         
         # Create page
@@ -395,6 +424,14 @@ def handle_run_workflow(payload: Dict[str, Any], db: Session):
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
                 "--disable-infobars",  # Hide "Chrome is being controlled" message
+                "--use-fake-device-for-media-stream",
+                "--use-fake-ui-for-media-stream",
+                "--disable-webgpu",
+                "--disable-features=WebRtcHideLocalIpsWithMdns",
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--autoplay-policy=no-user-gesture-required",
             ]
         )
         
@@ -411,6 +448,11 @@ def handle_run_workflow(payload: Dict[str, Any], db: Session):
             context_options["proxy"] = proxy_config
         
         context = browser.new_context(**context_options)
+        # Add scripts as early as possible: fingerprint patch, audio spoof, then fingerprint injection
+        if FINGERPRINT_PATCH_SCRIPT:
+            context.add_init_script(FINGERPRINT_PATCH_SCRIPT)
+        if AUDIO_SPOOF_SCRIPT:
+            context.add_init_script(AUDIO_SPOOF_SCRIPT)
         context.add_init_script(injection_script)
         page = context.new_page()
         
