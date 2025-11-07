@@ -12,6 +12,11 @@ node_modules
 browser_profiles/
 *.user-data-dir
 
+# Database backups - không nên commit lên git
+database_backups/
+*.sql
+!prisma/migrations/**/*.sql
+
 # Secrets - không nên commit lên git
 secrets/
 *.pem
