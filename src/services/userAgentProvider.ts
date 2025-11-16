@@ -61,10 +61,18 @@ export async function getUniqueUA(params: UAParams = {}): Promise<string> {
     os: params.os ? normalizeOS(params.os) : params.os
   }
   
-  const isMac = normalizedParams.os?.toLowerCase().includes('mac')
-  const defaultUA = isMac
-    ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
-    : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
+  const osLower = normalizedParams.os?.toLowerCase() || ''
+  const isMac = osLower.includes('mac')
+  const isLinux = osLower.includes('linux')
+  
+  let defaultUA: string
+  if (isMac) {
+    defaultUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
+  } else if (isLinux) {
+    defaultUA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
+  } else {
+    defaultUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
+  }
   
   for (let i = 0; i < 10; i++) {
     let ua = fromUserAgentsLib(normalizedParams)

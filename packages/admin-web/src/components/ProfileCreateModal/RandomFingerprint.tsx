@@ -8,6 +8,7 @@ const OS_OPTIONS = [
   'macOS M2',
   'macOS M3',
   'macOS M4',
+  'Linux',
 ]
 
 const BROWSER_VERSIONS = Array.from({ length: 11 }, (_, i) => 130 + i) // 130..140
@@ -53,9 +54,14 @@ function genRandomMac() {
 // build UA basic template (Chrome-like). Not a perfect fingerprint but OK for profile use.
 // You can call backend to ensure uniqueness if needed.
 function buildUA({ os, arch = 'x64', version }: { os: string; arch?: string; version: number }) {
-  const platform = os.startsWith('Windows')
-    ? `Windows NT 10.0; ${arch === 'x64' ? 'Win64; x64' : 'WOW64'}`
-    : `Macintosh; Intel Mac OS X 10_15_7`
+  let platform: string
+  if (os.startsWith('Windows')) {
+    platform = `Windows NT 10.0; ${arch === 'x64' ? 'Win64; x64' : 'WOW64'}`
+  } else if (os === 'Linux' || os.toLowerCase().includes('linux')) {
+    platform = `X11; Linux ${arch === 'x64' ? 'x86_64' : 'i686'}`
+  } else {
+    platform = `Macintosh; Intel Mac OS X 10_15_7`
+  }
   return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.0.0 Safari/537.36`
 }
 

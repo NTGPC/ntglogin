@@ -46,12 +46,30 @@ const scriptContent = `
     if (typeof navigator !== 'undefined') {
       try { Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true }); } catch(e){/*ignore*/}
       
+      const fakeUA = FP.ua || FP.userAgent || FP.user_agent || null;
       const fakeHC = FP.hwc || FP.hardware?.cores || (4 + (seed % 4)); // 4..7
       const fakeDM = FP.dmem || FP.hardware?.memoryGb || 4; // GB
-      const fakePlatform = FP.platform || (FP.os && FP.os.startsWith && FP.os.startsWith('macOS') ? 'MacIntel' : 
-                                           (FP.osName && FP.osName.startsWith('macOS') ? 'MacIntel' : 'Win32'));
+      
+      let fakePlatform = FP.platform;
+      if (!fakePlatform) {
+        const osName = FP.os || FP.osName || '';
+        const osLower = osName.toLowerCase();
+        const arch = FP.arch || FP.architecture || 'x64';
+        
+        if (osLower.includes('macos') || osLower.includes('mac')) {
+          fakePlatform = 'MacIntel';
+        } else if (osLower.includes('linux')) {
+          fakePlatform = arch === 'x64' || arch === 'x86_64' ? 'Linux x86_64' : 'Linux i686';
+        } else {
+          fakePlatform = 'Win32';
+        }
+      }
+      
       const fakeLangs = FP.languages || ['en-US', 'en'];
       
+      if (fakeUA) {
+        try { Object.defineProperty(navigator, 'userAgent', { get: () => fakeUA, configurable: true }); } catch(e){}
+      }
       try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => fakeHC, configurable: true }); } catch(e){}
       try { Object.defineProperty(navigator, 'deviceMemory', { get: () => fakeDM, configurable: true }); } catch(e){}
       try { Object.defineProperty(navigator, 'platform', { get: () => fakePlatform, configurable: true }); } catch(e){}

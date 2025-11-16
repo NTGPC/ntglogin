@@ -73,6 +73,19 @@ export const playwrightPresets: PwPreset[] = [
       platform: 'MacIntel',
     },
   },
+  {
+    name: 'Desktop Linux Chrome',
+    type: 'userAgent',
+    config: {
+      userAgent:
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080, deviceScaleFactor: 1 },
+      isMobile: false,
+      hasTouch: false,
+      languages: ['en-US', 'en'],
+      platform: 'Linux x86_64',
+    },
+  },
 ]
 
 

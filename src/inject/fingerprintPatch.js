@@ -1,7 +1,22 @@
-// --- WebGL vendor/renderer spoof ---
+// --- WebGL vendor/renderer spoof (dynamic based on OS) ---
 (function() {
-  const VENDOR = 'Apple Inc.';
-  const RENDERER = 'Apple M1';
+  const FP = window.__INJECTED_FINGERPRINT__ || {};
+  const osName = (FP.os || FP.osName || navigator.platform || '').toLowerCase();
+  
+  let VENDOR = 'Intel Inc.';
+  let RENDERER = 'Intel Iris OpenGL Engine';
+  
+  if (osName.includes('mac') || osName.includes('macos')) {
+    VENDOR = 'Apple Inc.';
+    RENDERER = 'Apple M1';
+  } else if (osName.includes('linux')) {
+    VENDOR = 'Google Inc. (NVIDIA)';
+    RENDERER = 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 3GB (0x00001C02) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+  } else {
+    VENDOR = FP.webgl?.vendor || 'Intel Inc.';
+    RENDERER = FP.webgl?.renderer || 'Intel Iris OpenGL Engine';
+  }
+  
   const PARAM_VENDOR = 0x1F00;
   const PARAM_RENDERER = 0x1F01;
   const EXT_PARAM_VENDOR = 0x9245;    // UNMASKED_VENDOR_WEBGL
@@ -24,6 +39,20 @@
   };
   if (window.WebGLRenderingContext) wrap(WebGLRenderingContext.prototype);
   if (window.WebGL2RenderingContext) wrap(WebGL2RenderingContext.prototype);
+  
+  if (window.OffscreenCanvas) {
+    const orig = OffscreenCanvas.prototype.getContext;
+    OffscreenCanvas.prototype.getContext = function(type, opts) {
+      const ctx = orig.call(this, type, opts);
+      if (ctx && (type === 'webgl' || type === 'webgl2')) {
+        try {
+          const p = Object.getPrototypeOf(ctx);
+          wrap(p);
+        } catch(e) {}
+      }
+      return ctx;
+    };
+  }
 })();
 
 // --- AudioContext noise ---

@@ -59,12 +59,30 @@ function buildStealthScript(fp: any): string {
     if (typeof navigator !== 'undefined') {
       try { Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true }); } catch(e){/*ignore*/}
       
+      const fakeUA = FP.ua || FP.userAgent || FP.user_agent || null;
       const fakeHC = FP.hwc || FP.hardware?.cores || (4 + (seed % 4)); // 4..7
       const fakeDM = FP.dmem || FP.hardware?.memoryGb || 4; // GB
-      const fakePlatform = FP.platform || (FP.os && FP.os.startsWith && FP.os.startsWith('macOS') ? 'MacIntel' : 
-                                           (FP.osName && FP.osName.startsWith('macOS') ? 'MacIntel' : 'Win32'));
+      
+      let fakePlatform = FP.platform;
+      if (!fakePlatform) {
+        const osName = FP.os || FP.osName || '';
+        const osLower = osName.toLowerCase();
+        const arch = FP.arch || FP.architecture || 'x64';
+        
+        if (osLower.includes('macos') || osLower.includes('mac')) {
+          fakePlatform = 'MacIntel';
+        } else if (osLower.includes('linux')) {
+          fakePlatform = arch === 'x64' || arch === 'x86_64' ? 'Linux x86_64' : 'Linux i686';
+        } else {
+          fakePlatform = 'Win32';
+        }
+      }
+      
       const fakeLangs = FP.languages || ['en-US', 'en'];
       
+      if (fakeUA) {
+        try { Object.defineProperty(navigator, 'userAgent', { get: () => fakeUA, configurable: true }); } catch(e){}
+      }
       try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => fakeHC, configurable: true }); } catch(e){}
       try { Object.defineProperty(navigator, 'deviceMemory', { get: () => fakeDM, configurable: true }); } catch(e){}
       try { Object.defineProperty(navigator, 'platform', { get: () => fakePlatform, configurable: true }); } catch(e){}
@@ -330,21 +348,253 @@ function buildStealthScript(fp: any): string {
     }
   })();
   
+  // ---------- Fonts fingerprinting protection ----------
+  (function fontsPatch(){
+    try {
+      const origOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth') || 
+        Object.getOwnPropertyDescriptor(Element.prototype, 'offsetWidth');
+      const origOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight') || 
+        Object.getOwnPropertyDescriptor(Element.prototype, 'offsetHeight');
+      
+      if (origOffsetWidth && origOffsetWidth.get) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+          get: function() {
+            const val = origOffsetWidth.get.call(this);
+            const jitter = ((seed % 3) - 1);
+            return Math.max(0, val + jitter);
+          },
+          configurable: true
+        });
+      }
+      
+      if (origOffsetHeight && origOffsetHeight.get) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+          get: function() {
+            const val = origOffsetHeight.get.call(this);
+            const jitter = ((seed % 3) - 1);
+            return Math.max(0, val + jitter);
+          },
+          configurable: true
+        });
+      }
+    } catch(e){}
+    
+    try {
+      const origGetComputedStyle = window.getComputedStyle;
+      window.getComputedStyle = function(el, pseudo) {
+        const style = origGetComputedStyle.call(this, el, pseudo);
+        if (el && el.tagName) {
+          try {
+            const proxy = new Proxy(style, {
+              get: function(target, prop) {
+                if (prop === 'fontFamily' || prop === 'fontSize') {
+                  const val = target[prop];
+                  return val;
+                }
+                return target[prop];
+              }
+            });
+            return proxy;
+          } catch(e){}
+        }
+        return style;
+      };
+    } catch(e){}
+  })();
+
+  // ---------- Plugins spoofing ----------
+  (function pluginsPatch(){
+    try {
+      const fakePlugins = [
+        {
+          name: 'Chrome PDF Plugin',
+          description: 'Portable Document Format',
+          filename: 'internal-pdf-viewer',
+          length: 1,
+          item: function(index) {
+            return index === 0 ? {
+              type: 'application/pdf',
+              suffixes: 'pdf',
+              description: 'Portable Document Format',
+              enabledPlugin: fakePlugins[0]
+            } : null;
+          },
+          namedItem: function(type) { return null; }
+        },
+        {
+          name: 'Chrome PDF Viewer',
+          description: '',
+          filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
+          length: 1,
+          item: function(index) { return null; },
+          namedItem: function(type) { return null; }
+        },
+        {
+          name: 'Native Client',
+          description: '',
+          filename: 'internal-nacl-plugin',
+          length: 2,
+          item: function(index) { return null; },
+          namedItem: function(type) { return null; }
+        }
+      ];
+      
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          const pluginArray = {
+            length: fakePlugins.length,
+            item: function(index) { return fakePlugins[index] || null; },
+            namedItem: function(name) {
+              for (const p of fakePlugins) {
+                if (p.name === name) return p;
+              }
+              return null;
+            },
+            refresh: function() {},
+            [Symbol.iterator]: function* () {
+              for (const p of fakePlugins) yield p;
+            }
+          };
+          for (let i = 0; i < fakePlugins.length; i++) {
+            Object.defineProperty(pluginArray, i, {
+              get: () => fakePlugins[i],
+              configurable: true
+            });
+          }
+          return pluginArray;
+        },
+        configurable: true
+      });
+      
+      Object.defineProperty(navigator, 'mimeTypes', {
+        get: () => {
+          const mimeArray = {
+            length: 1,
+            item: function(index) {
+              return index === 0 ? {
+                type: 'application/pdf',
+                suffixes: 'pdf',
+                description: 'Portable Document Format',
+                enabledPlugin: fakePlugins[0]
+              } : null;
+            },
+            namedItem: function(type) {
+              return type === 'application/pdf' ? {
+                type: 'application/pdf',
+                suffixes: 'pdf',
+                description: 'Portable Document Format',
+                enabledPlugin: fakePlugins[0]
+              } : null;
+            },
+            [Symbol.iterator]: function* () {
+              if (mimeArray.item(0)) yield mimeArray.item(0);
+            }
+          };
+          Object.defineProperty(mimeArray, 0, {
+            get: () => mimeArray.item(0),
+            configurable: true
+          });
+          return mimeArray;
+        },
+        configurable: true
+      });
+    } catch(e){}
+  })();
+
+  // ---------- Screen properties ----------
+  (function screenPatch(){
+    if (FP.screen) {
+      try {
+        Object.defineProperty(screen, 'width', { get: () => FP.screen.width || 1920, configurable: true });
+        Object.defineProperty(screen, 'height', { get: () => FP.screen.height || 1080, configurable: true });
+        Object.defineProperty(screen, 'availWidth', { get: () => (FP.screen.width || 1920), configurable: true });
+        Object.defineProperty(screen, 'availHeight', { get: () => (FP.screen.height || 1080) - 40, configurable: true });
+        Object.defineProperty(screen, 'colorDepth', { get: () => 24, configurable: true });
+        Object.defineProperty(screen, 'pixelDepth', { get: () => 24, configurable: true });
+        if (FP.screen.dpr) {
+          Object.defineProperty(window, 'devicePixelRatio', { get: () => FP.screen.dpr || 1, configurable: true });
+        }
+      } catch(e){}
+    }
+  })();
+
+  // ---------- Timezone ----------
+  (function timezonePatch(){
+    if (FP.timezone || FP.timezoneId) {
+      try {
+        const tz = FP.timezone || FP.timezoneId || 'America/New_York';
+        const origToLocaleString = Date.prototype.toLocaleString;
+        Date.prototype.toLocaleString = function(locales, options) {
+          if (options && options.timeZone) {
+            options.timeZone = tz;
+          }
+          return origToLocaleString.call(this, locales, options);
+        };
+        
+        const origToLocaleDateString = Date.prototype.toLocaleDateString;
+        Date.prototype.toLocaleDateString = function(locales, options) {
+          if (options && options.timeZone) {
+            options.timeZone = tz;
+          }
+          return origToLocaleDateString.call(this, locales, options);
+        };
+        
+        const origToLocaleTimeString = Date.prototype.toLocaleTimeString;
+        Date.prototype.toLocaleTimeString = function(locales, options) {
+          if (options && options.timeZone) {
+            options.timeZone = tz;
+          }
+          return origToLocaleTimeString.call(this, locales, options);
+        };
+      } catch(e){}
+    }
+  })();
+
   // ---------- mark injected for debug ----------
   try { Object.defineProperty(window, '__INJECTED_FINGERPRINT__', { value: FP, configurable:false }); } catch(e){}
-  
+
   // Remove Chrome automation indicators
-  try { delete window.chrome; window.chrome = { runtime: {} }; } catch(e){}
+  try { 
+    delete window.chrome; 
+    window.chrome = { 
+      runtime: {},
+      loadTimes: function() {},
+      csi: function() {},
+      app: {}
+    };
+  } catch(e){}
   
+  try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+  } catch(e){}
+
   // Override permissions query
   try {
-    const originalQuery = navigator.permissions.query;
-    navigator.permissions.query = function(parameters) {
-      if (parameters.name === 'notifications') {
-        return Promise.resolve({ state: Notification.permission });
-      }
-      return originalQuery.call(this, parameters);
-    };
+    if (navigator.permissions && navigator.permissions.query) {
+      const originalQuery = navigator.permissions.query;
+      navigator.permissions.query = function(parameters) {
+        if (parameters.name === 'notifications') {
+          return Promise.resolve({ state: Notification.permission || 'default' });
+        }
+        if (parameters.name === 'geolocation') {
+          return Promise.resolve({ state: 'prompt' });
+        }
+        try {
+          return originalQuery.call(this, parameters);
+        } catch(e) {
+          return Promise.resolve({ state: 'prompt' });
+        }
+      };
+    }
+  } catch(e){}
+  
+  // Hide automation indicators
+  try {
+    delete window.__playwright;
+    delete window.__pw_manual;
+    delete window.__pw_original;
+    delete window.__PUPPETEER_WORLD__;
+    delete window.__pw;
   } catch(e){}
 })();
 `;
@@ -519,6 +769,9 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
             ...fingerprint,
             // Add profileId for deterministic seeded noise (canvas, etc.)
             profileId: profileId,
+            // Ensure userAgent is included in fingerprint for JavaScript override
+            ua: fingerprint.ua || fingerprint.userAgent || fingerprint.user_agent || userAgent || null,
+            userAgent: fingerprint.userAgent || fingerprint.user_agent || fingerprint.ua || userAgent || null,
             canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : undefined),
             clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : undefined),
             audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : undefined),
@@ -714,6 +967,9 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         ...fingerprint,
         // Add profileId for deterministic seeded noise (canvas, etc.)
         profileId: profileId,
+        // Ensure userAgent is included in fingerprint for JavaScript override
+        ua: fingerprint.ua || fingerprint.userAgent || fingerprint.user_agent || userAgent || null,
+        userAgent: fingerprint.userAgent || fingerprint.user_agent || fingerprint.ua || userAgent || null,
         // Map flat DB fields to nested format for script compatibility
         canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : undefined),
         clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : undefined),

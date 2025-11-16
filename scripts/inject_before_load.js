@@ -40,7 +40,22 @@
       
       const fakeHC = (FP.hwc || (4 + (seed % 4)));
       const fakeDM = (FP.dmem || 4);
-      const fakePlatform = (FP.os && FP.os.startsWith('macOS')) ? 'MacIntel' : 'Win32';
+      
+      let fakePlatform = FP.platform;
+      if (!fakePlatform) {
+        const osName = FP.os || FP.osName || '';
+        const osLower = osName.toLowerCase();
+        const arch = FP.arch || FP.architecture || 'x64';
+        
+        if (osLower.includes('macos') || osLower.includes('mac')) {
+          fakePlatform = 'MacIntel';
+        } else if (osLower.includes('linux')) {
+          fakePlatform = arch === 'x64' || arch === 'x86_64' ? 'Linux x86_64' : 'Linux i686';
+        } else {
+          fakePlatform = 'Win32';
+        }
+      }
+      
       const fakeLangs = FP.languages || ['en-US','en'];
       
       try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => fakeHC, configurable:true }); } catch(e){}

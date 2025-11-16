@@ -23,7 +23,19 @@ def build_injection(fp: Dict[str, Any]) -> str:
     webgl_vendor = fp.get("webgl_vendor") or fp.get("webglVendor") or "Intel Inc."
     webgl_renderer = fp.get("webgl_renderer") or fp.get("webglRenderer") or "Intel Iris OpenGL Engine"
     
-    platform = fp.get("platform") or "Win32"
+    os_name = fp.get("os") or fp.get("os_name") or ""
+    os_arch = fp.get("arch") or fp.get("architecture") or "x64"
+    os_lower = os_name.lower()
+    
+    if not fp.get("platform"):
+        if "macos" in os_lower or "mac" in os_lower:
+            platform = "MacIntel"
+        elif "linux" in os_lower:
+            platform = "Linux x86_64" if (os_arch == "x64" or os_arch == "x86_64") else "Linux i686"
+        else:
+            platform = "Win32"
+    else:
+        platform = fp.get("platform")
     language = fp.get("language") or "en-US"
     timezone = fp.get("timezone") or "America/New_York"
     
@@ -198,6 +210,7 @@ def get_default_fingerprint() -> Dict[str, Any]:
         "device_memory": 8,
         "hardware_concurrency": 8,
         "platform": "Win32",
+        "os": "Windows 10",
         "language": "en-US",
         "timezone": "America/New_York",
         "webgl_vendor": "Intel Inc.",

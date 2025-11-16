@@ -1,13 +1,17 @@
 import prisma from '../prismaClient'
 
-export type OsName = 'Windows 11' | 'Windows 10' | 'Windows 8.1' | 'macOS M1' | 'macOS M2' | 'macOS M3' | 'macOS M4'
+export type OsName = 'Windows 11' | 'Windows 10' | 'Windows 8.1' | 'macOS M1' | 'macOS M2' | 'macOS M3' | 'macOS M4' | 'Linux'
 export type Arch = 'x86' | 'x64'
 
 function buildUA(osName: OsName, arch: Arch, version: number): string {
-  const isWin = osName.startsWith('Windows')
-  const platform = isWin
-    ? `Windows NT 10.0; ${arch === 'x64' ? 'Win64; x64' : 'WOW64'}`
-    : `Macintosh; Intel Mac OS X 10_15_7`
+  let platform: string
+  if (osName.startsWith('Windows')) {
+    platform = `Windows NT 10.0; ${arch === 'x64' ? 'Win64; x64' : 'WOW64'}`
+  } else if (osName === 'Linux' || osName.toLowerCase().includes('linux')) {
+    platform = `X11; Linux ${arch === 'x64' ? 'x86_64' : 'i686'}`
+  } else {
+    platform = `Macintosh; Intel Mac OS X 10_15_7`
+  }
   return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version}.0.0.0 Safari/537.36`
 }
 
