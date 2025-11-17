@@ -1,0 +1,78 @@
+[
+  {
+    "name": "Windows 11 - Chrome 120",
+    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "os": "Windows"
+  },
+  {
+    "name": "Windows 10 - Chrome 119",
+    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "os": "Windows"
+  },
+  {
+    "name": "Windows 10 - Chrome 118",
+    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+    "os": "Windows"
+  },
+  {
+    "name": "Windows 11 - Firefox 120",
+    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    "os": "Windows"
+  },
+  {
+    "name": "Windows 10 - Firefox 119",
+    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0",
+    "os": "Windows"
+  },
+  {
+    "name": "macOS Sonoma - Chrome 120",
+    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "os": "Mac OS"
+  },
+  {
+    "name": "macOS Ventura - Chrome 119",
+    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "os": "Mac OS"
+  },
+  {
+    "name": "macOS Monterey - Chrome 118",
+    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+    "os": "Mac OS"
+  },
+  {
+    "name": "macOS Sonoma - Firefox 120",
+    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0",
+    "os": "Mac OS"
+  },
+  {
+    "name": "macOS Ventura - Firefox 119",
+    "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:119.0) Gecko/20100101 Firefox/119.0",
+    "os": "Mac OS"
+  },
+  {
+    "name": "Linux Ubuntu - Chrome 120",
+    "value": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "os": "Linux"
+  },
+  {
+    "name": "Linux Ubuntu - Firefox 120",
+    "value": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+    "os": "Linux"
+  },
+  {
+    "name": "Android 13 - Pixel 7",
+    "value": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
+    "os": "Android"
+  },
+  {
+    "name": "Android 12 - Samsung S22",
+    "value": "Mozilla/5.0 (Linux; Android 12; SM-S908U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Mobile Safari/537.36",
+    "os": "Android"
+  },
+  {
+    "name": "iOS 17 - iPhone 15 Pro",
+    "value": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+    "os": "iOS"
+  }
+]
+

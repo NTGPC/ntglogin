@@ -1,16 +1,129 @@
 import puppeteer, { Browser } from 'puppeteer';
-import { chromium, Page } from 'playwright';
+// BƯỚC 1: THAY ĐỔI CÁCH IMPORT - Dùng playwright-extra thay vì playwright
+import { chromium } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
+
+// BƯỚC 2: BẢO PLAYWRIGHT-EXTRA SỬ DỤNG PLUGIN STEALTH
+// playwright-extra sử dụng StealthPlugin trực tiếp qua chromium.use()
+chromium.use(StealthPlugin());
+console.log('[BrowserService] ✅ Playwright-Extra với Stealth Plugin đã được kích hoạt!');
 
 // Path to fingerprint patch script (for Playwright)
 const fingerprintPatchPath = path.join(__dirname, '../inject/fingerprintPatch.js');
 // Path to audio spoof script (for Playwright)
 const audioSpoofPath = path.join(__dirname, '../inject/audioSpoof.js');
+// Path to deep injection script template (for Playwright)
+const injectionScriptTemplatePath = path.join(__dirname, '../../core/injection_script.js');
 
 // Load script contents (for Puppeteer)
 const fingerprintPatchScript = fs.readFileSync(fingerprintPatchPath, 'utf-8');
 const audioSpoofScript = fs.readFileSync(audioSpoofPath, 'utf-8');
+
+function processInjectionTemplate(profileData: any): string {
+  try {
+    let template = fs.readFileSync(injectionScriptTemplatePath, 'utf-8');
+    
+    // LƯU Ý: userAgent không còn được fake trong injection script nữa vì đã được CDP Emulation xử lý
+    const navigator = profileData?.navigator || {};
+    const screen = profileData?.screen || {};
+    const webgl = profileData?.webgl || {};
+    const canvas = profileData?.canvas || { mode: 'Noise' };
+    const audioContext = profileData?.audioContext || { mode: 'Off' };
+    const clientRects = profileData?.clientRects || { mode: 'Off' };
+    const geo = profileData?.geo || { enabled: false, lat: null, lon: null };
+    const webrtc = profileData?.webrtc || { useMainIP: false };
+    const timezone = profileData?.timezone || profileData?.timezoneId || 'America/New_York';
+    const seed = profileData?.seed || profileData?.profileId || 12345;
+    
+    // --- FIX OS PLATFORM DETECTION ---
+    let platform = navigator.platform || profileData?.platform || null;
+    if (!platform) {
+      const osName = profileData?.os || profileData?.osName || '';
+      const osLower = osName.toLowerCase();
+      const arch = profileData?.arch || profileData?.architecture || 'x64';
+      
+      if (osLower.includes('macos') || osLower.includes('mac')) {
+        platform = 'MacIntel';
+      } else if (osLower.includes('linux')) {
+        platform = arch === 'x64' || arch === 'x86_64' ? 'Linux x86_64' : 'Linux i686';
+      } else {
+        platform = 'Win32';
+      }
+    }
+    
+    console.log(`[Injection Template] OS: ${profileData?.os || profileData?.osName || 'Unknown'}, Platform: ${platform}`);
+    
+    // --- FIX WEBGL VENDOR/RENDERER ---
+    let webglVendor = webgl.vendor || 'Google Inc. (NVIDIA)';
+    let webglRenderer = webgl.renderer || 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+    
+    if (webgl.renderer && webgl.renderer.includes('ANGLE')) {
+      webglVendor = 'Google Inc. (NVIDIA)';
+    } else if (!webgl.vendor) {
+      const osLower = (profileData?.os || profileData?.osName || '').toLowerCase();
+      if (osLower.includes('macos') || osLower.includes('mac')) {
+        webglVendor = 'Apple Inc.';
+        if (!webglRenderer || webglRenderer.includes('ANGLE')) {
+          webglRenderer = 'Apple M1';
+        }
+      } else if (osLower.includes('linux')) {
+        webglVendor = 'Google Inc. (NVIDIA)';
+        if (!webglRenderer || !webglRenderer.includes('ANGLE')) {
+          webglRenderer = 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 3GB (0x00001C02) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+        }
+      } else {
+        webglVendor = 'Intel Inc.';
+        if (!webglRenderer || webglRenderer.includes('ANGLE')) {
+          webglRenderer = 'Intel Iris OpenGL Engine';
+        }
+      }
+    }
+    
+    console.log(`[Injection Template] WebGL Vendor: ${webglVendor}`);
+    console.log(`[Injection Template] WebGL Renderer: ${webglRenderer.substring(0, 80)}...`);
+    
+    // LƯU Ý: User-Agent và Platform KHÔNG CÒN được fake trong injection script nữa
+    // CDP Emulation.setUserAgentOverride đã xử lý ở cấp engine, nên không cần replacements cho chúng
+    const replacements: Record<string, string> = {
+      '%%HARDWARE_CONCURRENCY%%': String(navigator.hardwareConcurrency || profileData?.hwc || profileData?.hardware?.cores || 8),
+      '%%DEVICE_MEMORY%%': String(navigator.deviceMemory || profileData?.dmem || profileData?.hardware?.memoryGb || 8),
+      '%%LANGUAGES%%': JSON.stringify(navigator.languages || profileData?.languages || ['en-US', 'en']),
+      '%%LANGUAGE%%': JSON.stringify(navigator.language || profileData?.language || 'en-US'),
+      '%%SCREEN_WIDTH%%': String(screen.width || 1920),
+      '%%SCREEN_HEIGHT%%': String(screen.height || 1080),
+      '%%SCREEN_AVAIL_WIDTH%%': String(screen.availWidth || screen.width || 1920),
+      '%%SCREEN_AVAIL_HEIGHT%%': String(screen.availHeight || (screen.height ? screen.height - 40 : 1040)),
+      '%%SCREEN_COLOR_DEPTH%%': String(screen.colorDepth || 24),
+      '%%SCREEN_PIXEL_DEPTH%%': String(screen.pixelDepth || 24),
+      '%%DEVICE_PIXEL_RATIO%%': String(screen.devicePixelRatio || screen.dpr || 1),
+      '%%WEBGL_VENDOR%%': JSON.stringify(webglVendor),
+      '%%WEBGL_RENDERER%%': JSON.stringify(webglRenderer),
+      '%%CANVAS_MODE%%': JSON.stringify(canvas.mode || 'Noise'),
+      '%%CANVAS_SEED%%': String(canvas.seed || seed),
+      '%%AUDIO_CONTEXT_MODE%%': JSON.stringify(audioContext.mode || 'Off'),
+      '%%AUDIO_SEED%%': String(audioContext.seed || seed),
+      '%%CLIENT_RECTS_MODE%%': JSON.stringify(clientRects.mode || 'Off'),
+      '%%GEO_ENABLED%%': String(geo.enabled || false),
+      '%%GEO_LAT%%': String(geo.lat || geo.latitude || 10.762622),
+      '%%GEO_LON%%': String(geo.lon || geo.longitude || 106.660172),
+      '%%WEBRTC_USE_MAIN_IP%%': String(webrtc.useMainIP || false),
+      '%%TIMEZONE%%': JSON.stringify(timezone),
+      '%%SEED%%': String(seed)
+    };
+    
+    Object.entries(replacements).forEach(([placeholder, value]) => {
+      template = template.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+    });
+    
+    return template;
+  } catch (error) {
+    console.error('[Injection Template] Error processing template:', error);
+    return buildStealthScript(profileData);
+  }
+}
 
 // Store browser instances per session (Puppeteer Browser or Playwright Context)
 const browserInstances = new Map<number, any>();
@@ -700,11 +813,12 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         password: proxy.password || undefined,
       },
       args: [
+        // Các tham số để ẩn dấu hiệu tự động hóa
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--disable-dev-shm-usage',
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-dev-shm-usage',
-        '--disable-infobars',
         '--disable-notifications',
         '--disable-popup-blocking',
         '--restore-last-session',
@@ -717,8 +831,12 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         '--no-default-browser-check',
         '--autoplay-policy=no-user-gesture-required',
       ],
+      // Bỏ qua các default args tự động hóa
+      ignoreDefaultArgs: ['--enable-automation'],
     };
-    if (userAgent) contextOptions.userAgent = userAgent;
+    
+    // QUAN TRỌNG: KHÔNG set userAgent trong contextOptions để tránh xung đột với CDP Emulation
+    // CDP Emulation.setUserAgentOverride sẽ xử lý User-Agent ở cấp engine tốt hơn
     if (fingerprint && fingerprint.viewport) {
       contextOptions.viewport = {
         width: fingerprint.viewport.width || 1280,
@@ -738,6 +856,7 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
     }
 
     try {
+      console.log(`[Browser ${sessionId}] ✅ Khởi chạy với STEALTH MODE - Playwright-Extra + Stealth Plugin`);
       const context = await chromium.launchPersistentContext(profileDir, contextOptions);
       browserInstances.set(sessionId, context);
 
@@ -746,6 +865,62 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
       let page: Page | undefined = pages[0];
       if (!page) page = await context.newPage();
       try { await page.bringToFront(); } catch {}
+
+      // --- BƯỚC 2: ĐÂY LÀ PHẦN "MA THUẬT" CDP EMULATION ---
+      // Tạo một phiên kết nối trực tiếp đến Chrome DevTools Protocol
+      // Ra lệnh cho trình duyệt ghi đè User-Agent ở cấp độ nhân (engine-level)
+      // BƯỚC QUAN TRỌNG NHẤT: DÙNG LỆNH GIẢ LẬP
+      // Lệnh này sẽ ghi đè User-Agent (HTTP), User-Agent (JS), Platform (JS)
+      // và các Client Hint (Sec-CH-UA) liên quan một cách nhất quán.
+      if (userAgent) {
+        try {
+          const client = await context.newCDPSession(page);
+          
+          // Extract Chrome version từ userAgent string (ví dụ: "Chrome/120.0.0.0" -> "120")
+          const chromeVersionMatch = userAgent.match(/Chrome\/(\d+)/);
+          const chromeMajorVersion = chromeVersionMatch ? chromeVersionMatch[1] : '120';
+          const chromeFullVersion = chromeVersionMatch ? `${chromeMajorVersion}.0.6099.71` : '120.0.6099.71';
+          
+          // Determine platform string
+          const platform = fingerprint?.platform || 
+            (fingerprint?.os === 'Windows' ? 'Win32' : 
+             fingerprint?.os === 'Mac OS' ? 'MacIntel' : 
+             'Linux x86_64');
+          
+          // Determine OS name for userAgentMetadata
+          const osName = platform === 'Win32' ? 'Windows' : 
+                        platform === 'MacIntel' ? 'macOS' : 
+                        'Linux';
+          
+          await client.send('Emulation.setUserAgentOverride', {
+            userAgent: userAgent,
+            platform: platform, // <-- Ghi đè platform ở đây luôn
+            
+            // Các User-Agent Client Hint để trông giống thật hơn
+            userAgentMetadata: {
+              brands: [
+                { brand: 'Not_A Brand', version: '8' },
+                { brand: 'Chromium', version: chromeMajorVersion },
+                { brand: 'Google Chrome', version: chromeMajorVersion }
+              ],
+              fullVersion: chromeFullVersion,
+              platform: osName,
+              platformVersion: osName === 'Windows' ? '10.0.0' : osName === 'macOS' ? '13.0.0' : '5.15.0',
+              architecture: 'x86',
+              model: '',
+              mobile: false
+            }
+          });
+          
+          console.log(`[Browser ${sessionId}] ✅ CDP Emulation.setUserAgentOverride applied: ${userAgent.substring(0, 80)}...`);
+          console.log(`[Browser ${sessionId}] ✅ Platform: ${platform}, Chrome Version: ${chromeMajorVersion}`);
+        } catch (cdpError) {
+          console.warn(`[Browser ${sessionId}] ⚠️ Failed to apply CDP Emulation.setUserAgentOverride:`, cdpError);
+        }
+      } else {
+        console.warn(`[Browser ${sessionId}] ⚠️ Không có User-Agent được cung cấp, có thể bị rò rỉ thông tin!`);
+      }
+      // --- KẾT THÚC PHẦN "MA THUẬT" CDP EMULATION ---
 
       // Remove about:blank if session tabs are restored
       setTimeout(async () => {
@@ -767,34 +942,59 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
         try {
           const normalizedFp: any = {
             ...fingerprint,
-            // Add profileId for deterministic seeded noise (canvas, etc.)
             profileId: profileId,
-            // Ensure userAgent is included in fingerprint for JavaScript override
-            ua: fingerprint.ua || fingerprint.userAgent || fingerprint.user_agent || userAgent || null,
             userAgent: fingerprint.userAgent || fingerprint.user_agent || fingerprint.ua || userAgent || null,
-            canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : undefined),
-            clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : undefined),
-            audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : undefined),
+            ua: fingerprint.ua || fingerprint.userAgent || fingerprint.user_agent || userAgent || null,
+            os: fingerprint.os || fingerprint.osName || null,
+            osName: fingerprint.osName || fingerprint.os || null,
+            platform: fingerprint.platform || null,
+            navigator: {
+              platform: fingerprint.platform || null,
+              hardwareConcurrency: fingerprint.hwc || fingerprint.hardware?.cores || null,
+              deviceMemory: fingerprint.dmem || fingerprint.hardware?.memoryGb || null,
+              languages: fingerprint.languages || null,
+              language: fingerprint.language || null
+            },
+            screen: fingerprint.screen || {
+              width: fingerprint.viewport?.width || 1920,
+              height: fingerprint.viewport?.height || 1080,
+              availWidth: fingerprint.viewport?.width || 1920,
+              availHeight: (fingerprint.viewport?.height || 1080) - 40,
+              colorDepth: 24,
+              pixelDepth: 24,
+              devicePixelRatio: fingerprint.viewport?.deviceScaleFactor || 1
+            },
             webgl: fingerprint.webgl || {
+              vendor: null,
+              renderer: null,
               imageMode: fingerprint.webglImageMode,
               metaMode: fingerprint.webglMetaMode,
             },
-            geo: fingerprint.geo || (fingerprint.geoEnabled !== undefined ? { enabled: fingerprint.geoEnabled } : undefined),
-            webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : undefined),
+            canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : { mode: 'Noise' }),
+            clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : { mode: 'Off' }),
+            audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : { mode: 'Off' }),
+            geo: fingerprint.geo || (fingerprint.geoEnabled !== undefined ? { enabled: fingerprint.geoEnabled, lat: fingerprint.geoLat, lon: fingerprint.geoLon } : { enabled: false }),
+            webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : { useMainIP: false }),
+            timezone: fingerprint.timezone || fingerprint.timezoneId || null,
+            seed: fingerprint.seed || profileId || 12345
           };
+          
+          const deepInjectionScript = processInjectionTemplate(normalizedFp);
           const stealthScript = buildStealthScript(normalizedFp);
-          // Inject scripts as early as possible: fingerprint patch, audio spoof, then stealth script
+          
           for (const p of context.pages()) {
             await p.addInitScript({ path: fingerprintPatchPath });
             await p.addInitScript({ path: audioSpoofPath });
+            await p.addInitScript(deepInjectionScript);
             await p.addInitScript(stealthScript);
           }
           context.on('page', (newPage) => {
             newPage.addInitScript({ path: fingerprintPatchPath }).catch(() => {});
             newPage.addInitScript({ path: audioSpoofPath }).catch(() => {});
+            newPage.addInitScript(deepInjectionScript).catch(() => {});
             newPage.addInitScript(stealthScript).catch(() => {});
           });
-          console.log(`[Browser ${sessionId}] Stealth fingerprint injected for Playwright context`);
+          console.log(`[Browser ${sessionId}] ✅ Stealth fingerprint injected for Playwright context với Stealth Plugin`);
         } catch (fpError) {
           console.warn(`[Browser ${sessionId}] Failed to inject fingerprint for Playwright:`, fpError);
         }

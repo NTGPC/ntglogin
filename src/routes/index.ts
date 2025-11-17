@@ -13,6 +13,8 @@ import workflowsRouter from './workflows.routes';
 import n8nRouter from './n8n.routes';
 import insightsRoutes from '../insights/insights.routes';
 import changelogRoutes from './changelogRoutes';
+import gpuRoutes from './gpuRoutes';
+import userAgentLibraryRoutes from './userAgentLibraryRoutes';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -39,6 +41,8 @@ router.use('/', requireAuth, workflowsRouter);
 router.use('/n8n', requireAuth, n8nRouter);
 router.use('/insights', insightsRoutes);
 router.use('/changelogs', requireAuth, changelogRoutes);
+router.use('/gpus', gpuRoutes);
+router.use('/user-agents', userAgentLibraryRoutes);
 
 // Health check
 router.get('/health', (_req, res) => {

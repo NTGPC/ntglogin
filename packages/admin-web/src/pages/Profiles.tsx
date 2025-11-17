@@ -24,6 +24,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { Plus, Edit, Trash2, Play, Search } from 'lucide-react'
 import RandomizeButton from '@/components/ProfileCreateModal/RandomFingerprint'
+import GPUSelect from '@/components/GPUSelect'
 import '@/styles/profile-modal.css'
 
 const fpSchema = z.object({
@@ -165,7 +166,10 @@ export default function Profiles() {
   const [audioCtxMode, setAudioCtxMode] = useState<'Off' | 'Noise'>('Off')
   const [webglImageMode, setWebglImageMode] = useState<'Off' | 'Noise'>('Off')
   const [webglMetaMode, setWebglMetaMode] = useState<'Mask' | 'Real'>('Mask')
+  const [webglVendor, setWebglVendor] = useState<string>('')
+  const [webglRenderer, setWebglRenderer] = useState<string>('')
   const [geoEnabled, setGeoEnabled] = useState(false)
+  const [userAgents, setUserAgents] = useState<any[]>([])
   const [webrtcMainIP, setWebrtcMainIP] = useState(false)
   const [proxyMode, setProxyMode] = useState<'manual' | 'library'>('manual')
   const [proxyManual, setProxyManual] = useState<{ host?: string; port?: number; username?: string; password?: string }>({})
@@ -190,7 +194,51 @@ export default function Profiles() {
     loadProfiles()
     loadProxies()
     if (SHOW_WORKFLOWS) loadWorkflows()
+    loadUserAgents()
   }, [])
+
+  const loadUserAgents = async () => {
+    try {
+      const uaList = await api.getUserAgentList()
+      setUserAgents(uaList)
+      console.log(`[Profiles] Loaded ${uaList.length} User-Agents`)
+    } catch (error) {
+      console.error('[Profiles] Failed to load User-Agent list:', error)
+    }
+  }
+
+  const handleUserAgentChange = (uaValue: string) => {
+    if (!uaValue) return
+    
+    // Cập nhật User-Agent trong form
+    const input = document.getElementById('user_agent') as HTMLInputElement | null
+    if (input) {
+      input.value = uaValue
+      setUaEditable(true)
+    }
+    
+    // Tự động đồng bộ OS nếu User-Agent có OS info
+    const selectedUA = userAgents.find(ua => ua.value === uaValue)
+    if (selectedUA && selectedUA.os) {
+      // Map OS từ user_agents.json sang format của form
+      const osMap: Record<string, string> = {
+        'Windows': 'Windows 10',
+        'Mac OS': 'macOS M1',
+        'Linux': 'Linux',
+        'Android': 'Android',
+        'iOS': 'iOS'
+      }
+      const mappedOS = osMap[selectedUA.os] || 'Windows 10'
+      setOsName(mappedOS)
+      console.log(`[Profiles] ✅ Auto-synced OS to: ${mappedOS} based on User-Agent: ${selectedUA.name}`)
+    }
+  }
+  
+  // Get current User-Agent value để sync với dropdown
+  const getCurrentUserAgent = () => {
+    const input = document.getElementById('user_agent') as HTMLInputElement | null
+    return input?.value || ''
+  }
 
   useEffect(() => {
     if (!SHOW_WORKFLOWS) return
@@ -560,6 +608,10 @@ export default function Profiles() {
       payload.audioCtxMode = audioCtxMode
       payload.webglImageMode = webglImageMode
       payload.webglMetaMode = webglMetaMode
+      if (webglVendor || webglRenderer) {
+        payload.webglVendor = webglVendor
+        payload.webglRenderer = webglRenderer
+      }
       payload.geoEnabled = geoEnabled
       payload.webrtcMainIP = webrtcMainIP
       if (proxyMode === 'library' && proxyRefId) payload.proxyRefId = String(proxyRefId)
@@ -941,26 +993,48 @@ export default function Profiles() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="user_agent">User Agent</Label>
-                <div className="flex gap-2 items-center">
-                  <Input id="user_agent" placeholder="Auto via provider" disabled={!uaEditable} {...register('user_agent')} />
-                  <Button type="button" variant="outline" onClick={async () => {
-                    try {
-                      const ua = await api.getUserAgent({ browser: 'chrome', versionHint: browserVersion === 'Auto' ? undefined : Number(browserVersion), os: osName })
-                      setUaEditable(true)
-                      // set value via manual set since we use react-hook-form
-                      const input = document.getElementById('user_agent') as HTMLInputElement | null
-                      if (input) input.value = ua
-                    } catch (e:any) {
-                      alert(e?.message || 'Failed to generate user agent')
-                    }
-                  }} title="Generate via provider">
-                    Generate
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => setUaEditable((v) => !v)} title="Edit UA">
-                    {uaEditable ? 'Lock' : 'Edit'}
-                  </Button>
+                <div className="space-y-2">
+                  <select
+                    id="ua-select"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={(() => {
+                      const currentUA = getCurrentUserAgent()
+                      const foundUA = userAgents.find(ua => ua.value === currentUA)
+                      return foundUA ? foundUA.value : ''
+                    })()}
+                    onChange={(e) => handleUserAgentChange(e.target.value)}
+                  >
+                    <option value="">-- Chọn User Agent từ thư viện --</option>
+                    {userAgents.map((ua, index) => (
+                      <option key={index} value={ua.value}>
+                        {ua.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2 items-center">
+                    <Input id="user_agent" placeholder="Auto via provider hoặc chọn từ dropdown trên" disabled={!uaEditable} {...register('user_agent')} className="flex-1" />
+                    <Button type="button" variant="outline" onClick={async () => {
+                      try {
+                        const ua = await api.getUserAgent({ browser: 'chrome', versionHint: browserVersion === 'Auto' ? undefined : Number(browserVersion), os: osName })
+                        setUaEditable(true)
+                        // set value via manual set since we use react-hook-form
+                        const input = document.getElementById('user_agent') as HTMLInputElement | null
+                        if (input) input.value = ua
+                        // Reset dropdown
+                        const select = document.getElementById('ua-select') as HTMLSelectElement | null
+                        if (select) select.value = ''
+                      } catch (e:any) {
+                        alert(e?.message || 'Failed to generate user agent')
+                      }
+                    }} title="Generate via provider">
+                      Generate
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setUaEditable((v) => !v)} title="Edit UA">
+                      {uaEditable ? 'Lock' : 'Edit'}
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Mặc định hệ thống tự sinh UA duy nhất, bạn chỉ nên sửa khi thật cần.</p>
+                <p className="text-xs text-muted-foreground">Chọn User-Agent từ dropdown để tự động đồng bộ OS, hoặc Generate để tạo ngẫu nhiên.</p>
               </div>
 
               {/* OS & Arch */}
@@ -968,11 +1042,16 @@ export default function Profiles() {
                 <div className="space-y-1">
                   <Label>OS</Label>
                   <select value={osName} onChange={(e) => setOsName(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    {['Windows 11', 'Windows 10', 'Windows 8.1', 'macOS M1', 'macOS M2', 'macOS M3', 'macOS M4'].map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
+                    <option value="Windows 11">Windows 11</option>
+                    <option value="Windows 10">Windows 10</option>
+                    <option value="Windows 8.1">Windows 8.1</option>
+                    <option value="macOS M1">macOS M1</option>
+                    <option value="macOS M2">macOS M2</option>
+                    <option value="macOS M3">macOS M3</option>
+                    <option value="macOS M4">macOS M4</option>
+                    <option value="Linux">Linux</option>
+                    <option value="Android">Android</option>
+                    <option value="iOS">iOS</option>
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -1071,16 +1150,24 @@ export default function Profiles() {
                     ))}
                   </div>
                 </div>
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={geoEnabled} onChange={(e) => setGeoEnabled(e.target.checked)} /> GEO Location
-                    <span className="text-xs text-muted-foreground">{geoEnabled ? 'Using fake (hide original)' : 'Using original'}</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={webrtcMainIP} onChange={(e) => setWebrtcMainIP(e.target.checked)} /> WebRTC IP (main)
-                    <span className="text-xs text-muted-foreground">{webrtcMainIP ? 'Using fake (hide original)' : 'Using original'}</span>
-                  </label>
-                </div>
+              </div>
+
+              {/* GPU Selection */}
+              <div className="space-y-1">
+                <Label>WebGL Renderer (Card đồ họa)</Label>
+                <GPUSelect value={webglRenderer} onChange={(angle, vendor) => { setWebglRenderer(angle); setWebglVendor(vendor); }} />
+              </div>
+
+              {/* GEO Location & WebRTC */}
+              <div className="flex items-center gap-6">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={geoEnabled} onChange={(e) => setGeoEnabled(e.target.checked)} /> GEO Location
+                  <span className="text-xs text-muted-foreground">{geoEnabled ? 'Using fake (hide original)' : 'Using original'}</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={webrtcMainIP} onChange={(e) => setWebrtcMainIP(e.target.checked)} /> WebRTC IP (main)
+                  <span className="text-xs text-muted-foreground">{webrtcMainIP ? 'Using fake (hide original)' : 'Using original'}</span>
+                </label>
               </div>
 
               {/* Proxy */}

@@ -1,13 +1,65 @@
+import { useState, useEffect } from 'react'
 import { ProfileEditorData } from './types'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { api } from '@/lib/api'
 
 interface FingerprintTabProps {
   data: ProfileEditorData
   onChange: (data: Partial<ProfileEditorData>) => void
 }
 
+interface GPUEntry {
+  brand: string
+  series: string
+  model: string
+  device_id: string
+  device_id_decimal: number
+  architecture: string
+  directx: string
+  shader_model: string
+  angle: string
+}
+
 export default function FingerprintTab({ data, onChange }: FingerprintTabProps) {
+  const [gpus, setGpus] = useState<GPUEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadGPUs = async () => {
+      try {
+        setLoading(true)
+        const gpuList = await api.getGPUList()
+        setGpus(gpuList)
+        console.log(`[FingerprintTab] Loaded ${gpuList.length} GPUs`)
+      } catch (error) {
+        console.error('[FingerprintTab] Failed to load GPU list:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadGPUs()
+  }, [])
+
+  const handleGPUSelect = (angle: string) => {
+    const selectedGpu = gpus.find(gpu => gpu.angle === angle)
+    if (selectedGpu) {
+      const vendor = selectedGpu.angle.includes('ANGLE') ? 'Google Inc. (NVIDIA)' : 
+                     selectedGpu.brand === 'Apple' ? 'Apple Inc.' : 
+                     selectedGpu.brand === 'Intel' ? 'Intel Inc.' : 
+                     'Google Inc. (NVIDIA)'
+      onChange({
+        webglRenderer: selectedGpu.angle,
+        webglVendor: vendor
+      })
+    } else if (!angle) {
+      onChange({
+        webglRenderer: undefined,
+        webglVendor: undefined
+      })
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Canvas */}
@@ -124,6 +176,34 @@ export default function FingerprintTab({ data, onChange }: FingerprintTabProps) 
             </Label>
           </div>
         </RadioGroup>
+      </div>
+
+      {/* WebGL Renderer (GPU Selection) */}
+      <div className="space-y-2">
+        <Label htmlFor="webgl-renderer-select">WebGL Renderer (Card đồ họa)</Label>
+        <select
+          id="webgl-renderer-select"
+          className="w-full px-3 py-2 border rounded-md text-sm bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground"
+          value={data.webglRenderer || ''}
+          onChange={(e) => handleGPUSelect(e.target.value)}
+          disabled={loading}
+        >
+          <option value="">-- Chọn card đồ họa --</option>
+          {loading ? (
+            <option disabled>Đang tải danh sách GPU...</option>
+          ) : (
+            gpus.map((gpu, index) => (
+              <option key={index} value={gpu.angle}>
+                {gpu.model} ({gpu.brand}) - {gpu.series}
+              </option>
+            ))
+          )}
+        </select>
+        {data.webglRenderer && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Renderer: {data.webglRenderer.substring(0, 100)}...
+          </p>
+        )}
       </div>
 
       {/* Geolocation */}

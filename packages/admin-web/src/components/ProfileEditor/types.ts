@@ -27,6 +27,8 @@ export interface ProfileEditorData {
   audioCtxMode?: 'Off' | 'Noise'
   webglImageMode?: 'Off' | 'Noise'
   webglMetaMode?: 'Mask' | 'Real'
+  webglVendor?: string
+  webglRenderer?: string
   geoEnabled?: boolean
   webrtcMainIP?: boolean
   useSwiftShader?: boolean

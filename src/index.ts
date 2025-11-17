@@ -4,9 +4,15 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { errorHandler } from './utils/errorHandler';
+import { loadGPUData } from './services/gpuService';
+import { loadUserAgentLibrary } from './services/userAgentLibraryService';
 
 // Load environment variables
 dotenv.config();
+
+// Load data on server startup
+loadGPUData();
+loadUserAgentLibrary();
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;

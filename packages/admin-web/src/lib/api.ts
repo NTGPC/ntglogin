@@ -374,5 +374,69 @@ export const api = {
       throw error
     }
   },
+
+  // GPU
+  async getGPUList(): Promise<any[]> {
+    try {
+      const response = await apiClient.get('/api/gpus')
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to load GPU list:', error)
+      return []
+    }
+  },
+
+  async getGPUByAngle(angle: string): Promise<any> {
+    try {
+      const encodedAngle = encodeURIComponent(angle)
+      const response = await apiClient.get(`/api/gpus/angle/${encodedAngle}`)
+      return response.data.data || response.data
+    } catch (error: any) {
+      console.error('Failed to get GPU by angle:', error)
+      return null
+    }
+  },
+
+  async getGPUsByBrand(brand: string): Promise<any[]> {
+    try {
+      const response = await apiClient.get(`/api/gpus/brand/${brand}`)
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to get GPUs by brand:', error)
+      return []
+    }
+  },
+
+  // User-Agent Library
+  async getUserAgentList(): Promise<any[]> {
+    try {
+      const response = await apiClient.get('/api/user-agents')
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to load User-Agent list:', error)
+      return []
+    }
+  },
+
+  async getUserAgentByValue(value: string): Promise<any> {
+    try {
+      const encodedValue = encodeURIComponent(value)
+      const response = await apiClient.get(`/api/user-agents/value/${encodedValue}`)
+      return response.data.data || response.data
+    } catch (error: any) {
+      console.error('Failed to get User-Agent by value:', error)
+      return null
+    }
+  },
+
+  async getUserAgentsByOS(os: string): Promise<any[]> {
+    try {
+      const response = await apiClient.get(`/api/user-agents/os/${os}`)
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to get User-Agents by OS:', error)
+      return []
+    }
+  },
 }
 
