@@ -7,49 +7,64 @@
 
   const PROFILE_DATA = {
     navigator: {
-      hardwareConcurrency: %%HARDWARE_CONCURRENCY%%,
-      deviceMemory: %%DEVICE_MEMORY%%,
+      // SỬA LỖI: Dùng JSON.parse('...') cho các giá trị Number
+      hardwareConcurrency: JSON.parse('%%HARDWARE_CONCURRENCY%%'),
+      deviceMemory: JSON.parse('%%DEVICE_MEMORY%%'),
+      // SỬA LỖI: languages là một mảng string
+      // Backend sẽ cần replace %%LANGUAGES%% thành mảng JavaScript như ['en-US', 'en']
       languages: %%LANGUAGES%%,
+      // SỬA LỖI: language là string, giữ nguyên
       language: '%%LANGUAGE%%'
     },
     screen: {
-      width: %%SCREEN_WIDTH%%,
-      height: %%SCREEN_HEIGHT%%,
-      availWidth: %%SCREEN_AVAIL_WIDTH%%,
-      availHeight: %%SCREEN_AVAIL_HEIGHT%%,
-      colorDepth: %%SCREEN_COLOR_DEPTH%%,
-      pixelDepth: %%SCREEN_PIXEL_DEPTH%%,
-      devicePixelRatio: %%DEVICE_PIXEL_RATIO%%
+      // SỬA LỖI: Dùng JSON.parse('...') cho các giá trị Number
+      width: JSON.parse('%%SCREEN_WIDTH%%'),
+      height: JSON.parse('%%SCREEN_HEIGHT%%'),
+      availWidth: JSON.parse('%%SCREEN_AVAIL_WIDTH%%'),
+      availHeight: JSON.parse('%%SCREEN_AVAIL_HEIGHT%%'),
+      colorDepth: JSON.parse('%%SCREEN_COLOR_DEPTH%%'),
+      pixelDepth: JSON.parse('%%SCREEN_PIXEL_DEPTH%%'),
+      devicePixelRatio: JSON.parse('%%DEVICE_PIXEL_RATIO%%')
     },
     webgl: {
+      // String thì không cần sửa
       vendor: '%%WEBGL_VENDOR%%',
       renderer: '%%WEBGL_RENDERER%%'
     },
     canvas: {
+      // String thì không cần sửa
       mode: '%%CANVAS_MODE%%',
-      seed: %%CANVAS_SEED%%
+      seed: '%%CANVAS_SEED%%'
     },
     audioContext: {
+      // String thì không cần sửa
       mode: '%%AUDIO_CONTEXT_MODE%%',
-      seed: %%AUDIO_SEED%%
+      seed: '%%AUDIO_SEED%%'
     },
     clientRects: {
+      // String thì không cần sửa
       mode: '%%CLIENT_RECTS_MODE%%'
     },
     geo: {
-      enabled: %%GEO_ENABLED%%,
-      lat: %%GEO_LAT%%,
-      lon: %%GEO_LON%%
+      // SỬA LỖI: Dùng JSON.parse('...') cho các giá trị Boolean và Number
+      enabled: JSON.parse('%%GEO_ENABLED%%'),
+      lat: JSON.parse('%%GEO_LAT%%'),
+      lon: JSON.parse('%%GEO_LON%%')
     },
     webrtc: {
-      useMainIP: %%WEBRTC_USE_MAIN_IP%%
+      // SỬA LỖI: Dùng JSON.parse('...') cho các giá trị Boolean
+      useMainIP: JSON.parse('%%WEBRTC_USE_MAIN_IP%%')
     },
     timezone: '%%TIMEZONE%%',
-    seed: %%SEED%%
+    seed: '%%SEED%%'
   };
 
+  // =======================================================================
+  // TỪ ĐÂY TRỞ XUỐNG, TOÀN BỘ CODE CỦA BẠN ĐÃ CHUẨN VÀ KHÔNG CẦN SỬA GÌ THÊM
+  // =======================================================================
+
   const FP = PROFILE_DATA;
-  const seed = (FP.seed || 12345) >>> 0;
+  const seed = (parseInt(FP.seed) || 12345) >>> 0;
 
   function xorshift32(seed) {
     let x = seed >>> 0;
@@ -64,9 +79,6 @@
   try {
     if (typeof navigator !== 'undefined') {
       try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch(e){}
-      
-      // LƯU Ý: User-Agent, Platform, appVersion đã được xử lý bởi CDP (Emulation.setUserAgentOverride) ở cấp engine,
-      // nên KHÔNG CÒN fake ở đây nữa để tránh xung đột.
       
       if (FP.navigator) {
         if (FP.navigator.hardwareConcurrency !== undefined) {
@@ -103,7 +115,7 @@
           const orig_getImageData = ctx.getImageData;
           ctx.getImageData = function(x, y, w, h) {
             const data = orig_getImageData.call(this, x, y, w, h);
-            const canvasSeed = FP.canvas?.seed || seed;
+            const canvasSeed = parseInt(FP.canvas?.seed) || seed;
             const canvasRand = xorshift32(canvasSeed);
             const len = data.data.length;
             for (let i = 0; i < len; i += 4) {
@@ -166,7 +178,7 @@
   (function audioPatch(){
     const audioMode = FP.audioContext?.mode || 'Off';
     if (audioMode === 'Noise') {
-      const audioSeed = FP.audioContext?.seed || seed;
+      const audioSeed = parseInt(FP.audioContext?.seed) || seed;
       const audioRand = xorshift32(audioSeed);
       
       try {
@@ -451,4 +463,3 @@
     delete window.__pw;
   } catch(e){}
 })();
-

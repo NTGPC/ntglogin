@@ -120,6 +120,26 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     }
   }, [open, onClose])
 
+  // LOGIC ĐÚNG: Dùng một state object duy nhất để quản lý TOÀN BỘ form
+  // Tạo hàm update chung cho các trường đơn giản
+  const handleFormChange = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  // Đặc biệt xử lý các object lồng nhau (như proxy, webgl, screen, etc.)
+  const handleNestedFormChange = (parent, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [parent]: {
+        ...prev[parent],
+        [field]: value,
+      },
+    }))
+  }
+
   const generateUserAgent = useCallback(async (skipCheck = false, currentFormData) => {
     if (!currentFormData) return
     
@@ -181,30 +201,25 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
   const handleChange = (field, value) => {
     if (field.startsWith('proxy.')) {
       const proxyField = field.split('.')[1]
-      setFormData((prev) => ({
-        ...prev,
-        proxy: {
-          ...prev.proxy,
-          [proxyField]: value,
-        },
-      }))
+      handleNestedFormChange('proxy', proxyField, value)
     } else {
       const prevOs = formData.os
-      setFormData((prev) => {
-        const updated = {
+      if (field === 'os' && value !== prevOs && value) {
+        setFormData((prev) => ({
           ...prev,
           [field]: value,
-        }
-        if (field === 'os' && value !== prevOs && value) {
-          updated.userAgent = ''
-        }
-        return updated
-      })
+          userAgent: '',
+        }))
+      } else {
+        handleFormChange(field, value)
+      }
     }
   }
 
+  // Khi nhấn nút, chỉ cần gửi đi TOÀN BỘ state object đã được cập nhật
   const handleSubmit = (e) => {
     e.preventDefault()
+    console.log("Đang gửi profile data hoàn chỉnh:", formData)
     onUpdate({
       ...formData,
       id: initial?.id,
@@ -247,7 +262,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   id="profile-name"
                   type="text"
                   value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
+                  onChange={(e) => handleFormChange('name', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -261,7 +276,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <textarea
                     id="profile-ua"
                     value={formData.userAgent}
-                    onChange={(e) => handleChange('userAgent', e.target.value)}
+                    onChange={(e) => handleFormChange('userAgent', e.target.value)}
                     rows={3}
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
                     placeholder="Mozilla/5.0..."
@@ -295,7 +310,14 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <select
                     id="profile-os"
                     value={formData.os}
-                    onChange={(e) => handleChange('os', e.target.value)}
+                    onChange={(e) => {
+                      const newOs = e.target.value
+                      setFormData((prev) => ({
+                        ...prev,
+                        os: newOs,
+                        userAgent: newOs !== prev.os && newOs ? '' : prev.userAgent
+                      }))
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="OS"
                   >
@@ -319,7 +341,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     value={formData.arch}
-                    onChange={(e) => handleChange('arch', e.target.value)}
+                    onChange={(e) => handleFormChange('arch', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="32-bit">32-bit</option>
@@ -336,7 +358,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <select
                     id="profile-browser"
                     value={formData.browser}
-                    onChange={(e) => handleChange('browser', e.target.value)}
+                    onChange={(e) => handleFormChange('browser', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Browser"
                   >
@@ -355,7 +377,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <select
                     id="profile-screen"
                     value={formData.screen}
-                    onChange={(e) => handleChange('screen', e.target.value)}
+                    onChange={(e) => handleFormChange('screen', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Screen Resolution"
                   >
@@ -380,7 +402,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     value={formData.canvas}
-                    onChange={(e) => handleChange('canvas', e.target.value)}
+                    onChange={(e) => handleFormChange('canvas', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Canvas"
                   >
@@ -396,7 +418,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     value={formData.clientRects}
-                    onChange={(e) => handleChange('clientRects', e.target.value)}
+                    onChange={(e) => handleFormChange('clientRects', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Client Rects"
                   >
@@ -413,7 +435,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     value={formData.audioContext}
-                    onChange={(e) => handleChange('audioContext', e.target.value)}
+                    onChange={(e) => handleFormChange('audioContext', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Audio Context"
                   >
@@ -428,7 +450,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     value={formData.webglImage}
-                    onChange={(e) => handleChange('webglImage', e.target.value)}
+                    onChange={(e) => handleFormChange('webglImage', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="WebGL Image"
                   >
@@ -444,7 +466,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 </label>
                 <select
                   value={formData.webglMetadata}
-                  onChange={(e) => handleChange('webglMetadata', e.target.value)}
+                  onChange={(e) => handleFormChange('webglMetadata', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   aria-label="WebGL Metadata"
                 >
@@ -463,7 +485,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <input
                     type="checkbox"
                     checked={formData.geoEnabled}
-                    onChange={(e) => handleChange('geoEnabled', e.target.checked)}
+                    onChange={(e) => handleFormChange('geoEnabled', e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700 dark:text-foreground">Geolocation Enabled</span>
@@ -476,7 +498,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     </label>
                     <select
                       value={formData.geoMode}
-                      onChange={(e) => handleChange('geoMode', e.target.value)}
+                      onChange={(e) => handleFormChange('geoMode', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="original">Original</option>
@@ -489,7 +511,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <input
                     type="checkbox"
                     checked={formData.webrtcMainIp}
-                    onChange={(e) => handleChange('webrtcMainIp', e.target.checked)}
+                    onChange={(e) => handleFormChange('webrtcMainIp', e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700 dark:text-foreground">WebRTC Main IP</span>
@@ -507,7 +529,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 </label>
                 <select
                   value={formData.proxyMode}
-                  onChange={(e) => handleChange('proxyMode', e.target.value)}
+                  onChange={(e) => handleFormChange('proxyMode', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="Manual">Manual</option>
