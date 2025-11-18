@@ -2,8 +2,12 @@ import { Request, Response } from 'express';
 import * as workflowService from '../services/workflowService';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
-export const getAll = asyncHandler(async (_req: Request, res: Response) => {
-  const workflows = await workflowService.getAllWorkflows();
+export const getAll = asyncHandler(async (req: Request, res: Response) => {
+  // Kiểm tra query parameter để xem có yêu cầu chỉ lấy id và name không
+  const fields = req.query.fields as string | undefined;
+  const selectFields = fields === 'id,name' ? { id: true, name: true } : undefined;
+  
+  const workflows = await workflowService.getAllWorkflows(selectFields);
 
   res.json({
     success: true,
@@ -178,13 +182,6 @@ export const execute = asyncHandler(async (req: Request, res: Response) => {
   const workflow = await workflowService.getWorkflowById(id);
   if (!workflow) {
     throw new AppError('Workflow not found', 404);
-  }
-
-  // Check if workflow has n8nWorkflowId (n8n workflow) or local data (local editor workflow)
-  const isN8nWorkflow = !!(workflow as any).n8nWorkflowId;
-  
-  if (isN8nWorkflow) {
-    throw new AppError('Use /api/n8n-workflows/:id/run endpoint for n8n workflows', 400);
   }
 
   // Build workflow JSON from workflow.data
@@ -382,10 +379,17 @@ export const runWorkflowForProfile = asyncHandler(async (req: Request, res: Resp
   if (email) vars.email = email;
   if (password) vars.password = password;
 
-  // Import and run profileStartProcessor
+  // Import and run profileStartProcessor (dùng path alias @worker/*)
   try {
-    // @ts-ignore - Dynamic import may not resolve at compile time
-    const profileStartProcessor = (await import('../../../packages/worker/src/processors/profileStartProcessor')).default;
+    // Helper function để resolve path alias @worker/* ở runtime
+    const path = (await import('path')).default;
+    const resolveWorkerPath = (aliasPath: string): string => {
+      const workerPath = aliasPath.replace('@worker/', '');
+      return path.resolve(process.cwd(), 'packages/worker/src', workerPath);
+    };
+    
+    const profileStartProcessorPath = resolveWorkerPath('@worker/processors/profileStartProcessor');
+    const profileStartProcessor = (await import(profileStartProcessorPath)).default;
     
     console.log(`🔄 [Workflow] Starting profile ${profileId} with workflow ${workflowId}`);
     

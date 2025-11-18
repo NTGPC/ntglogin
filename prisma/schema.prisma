@@ -57,11 +57,15 @@ model Profile {
   hardwareConcurrency Int? // CPU cores (4-8 typical)
   deviceMemory        Int? // RAM in GB (4-16 typical)
 
+  workflowId  Int?      // ID của workflow được gán, có thể là null
+  workflow    Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  
   sessions    Session[]
   executions  JobExecution[]
   assignments WorkflowAssignment[]
 
   @@index([name])
+  @@index([workflowId])
   @@map("profiles")
 }
 
@@ -137,12 +141,11 @@ model JobExecution {
   job_id       Int
   profile_id   Int
   session_id   Int?
-  // extended fields for n8n workflow integration
   workflow_id  Int?
-  provider     String    @default("n8n")
+  provider     String    @default("workflow")
   externalId   String?
   payload      Json?
-  status       String    @default("pending") // "pending", "running", "completed", "failed", (also used for n8n: queued/running/success/error/timeout)
+  status       String    @default("pending")
   started_at   DateTime?
   completed_at DateTime?
   result       Json?
@@ -178,12 +181,12 @@ model Workflow {
   id            Int                  @id @default(autoincrement())
   name          String
   data          Json?
-  // n8n integration fields
   source        String               @default("local")
-  n8nWorkflowId String?
+  n8nWorkflowId String?              // Deprecated: kept for backward compatibility
   description   String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
+  profiles      Profile[]            // Một workflow có thể được gán cho nhiều profile
   assignments   WorkflowAssignment[]
   executions    JobExecution[]
 

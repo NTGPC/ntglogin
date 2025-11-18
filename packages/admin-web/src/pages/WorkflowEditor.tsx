@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { StartNode, EndNode, MergeNode, OpenPageNode, ClosePageNode, ClickNode, WaitSelectorNode, TypeTextNode, ScreenshotNode, N8nCallWebhookNode, N8nExecuteWorkflowNode } from '@/components/workflow/nodes'
+import { StartNode, EndNode, MergeNode, OpenPageNode, ClosePageNode, ClickNode, WaitSelectorNode, TypeTextNode, ScreenshotNode } from '@/components/workflow/nodes'
 import { RightInspector } from '@/components/workflow/RightInspector'
 import { validateWorkflow, ValidationIssue } from '@/lib/workflowValidation'
 
@@ -40,8 +40,6 @@ const nodeTypes = {
   waitSelector: WaitSelectorNode,
   typeText: TypeTextNode,
   screenshot: ScreenshotNode,
-  n8nCallWebhook: N8nCallWebhookNode,
-  n8nExecuteWorkflow: N8nExecuteWorkflowNode,
 }
 
 const NODE_CATEGORIES = [
@@ -50,7 +48,6 @@ const NODE_CATEGORIES = [
   { id: 'interaction', label: 'Interaction', icon: MousePointer, color: 'bg-green-100 text-green-700 border-green-300' },
   { id: 'data', label: 'Data', icon: Type, color: 'bg-purple-100 text-purple-700 border-purple-300' },
   { id: 'output', label: 'Output', icon: Camera, color: 'bg-orange-100 text-orange-700 border-orange-300' },
-  { id: 'n8n', label: 'Integrations (n8n)', icon: Globe, color: 'bg-teal-100 text-teal-700 border-teal-300' },
 ]
 
 const ACTION_TYPES = [
@@ -63,66 +60,6 @@ const ACTION_TYPES = [
   { category: 'interaction', id: 'waitSelector', label: 'Wait Selector', description: 'Wait for element', icon: Clock, nodeType: 'waitSelector', defaultConfig: { selector: 'body', timeout: 5000 } },
   { category: 'data', id: 'typeText', label: 'Type Text', description: 'Fill input field', icon: Type, nodeType: 'typeText', defaultConfig: { selector: 'input', text: '' } },
   { category: 'output', id: 'screenshot', label: 'Screenshot', description: 'Capture page', icon: Camera, nodeType: 'screenshot', defaultConfig: {} },
-  // n8n Templates
-  {
-    category: 'n8n',
-    id: 'n8nCallWebhook',
-    label: 'HTTP Generic (n8n Webhook)',
-    description: 'POST to an n8n webhook and wait for response',
-    icon: Globe,
-    nodeType: 'n8nCallWebhook',
-    defaultConfig: {
-      path: '/webhook/abc123',
-      payload: { example: '{{context.email}}' },
-      headers: { 'x-api-key': '' },
-    },
-  },
-  {
-    category: 'n8n',
-    id: 'n8nExecuteWorkflow',
-    label: 'Execute n8n Workflow',
-    description: 'Trigger a specific n8n workflow and poll for result',
-    icon: Globe,
-    nodeType: 'n8nExecuteWorkflow',
-    defaultConfig: {
-      workflowId: '00000000-0000-0000-0000-000000000000',
-      payload: { email: '{{context.email}}' },
-      waitStrategy: 'poll',
-      pollIntervalMs: 1000,
-      timeoutMs: 120000,
-    },
-  },
-  // Quick templates
-  {
-    category: 'n8n',
-    id: 'n8nTelegramSendMessage',
-    label: 'Telegram Send Message',
-    description: 'Preset for Telegram via n8n workflow',
-    icon: Globe,
-    nodeType: 'n8nExecuteWorkflow',
-    defaultConfig: {
-      workflowId: 'replace-with-telegram-workflow-id',
-      payload: { chatId: '{{context.telegramChatId}}', text: 'Hello from NTGLOGIN' },
-      waitStrategy: 'poll',
-      pollIntervalMs: 1000,
-      timeoutMs: 120000,
-    },
-  },
-  {
-    category: 'n8n',
-    id: 'n8nGoogleSheetsAppend',
-    label: 'Google Sheets Append Row',
-    description: 'Preset for Google Sheets via n8n workflow',
-    icon: Globe,
-    nodeType: 'n8nExecuteWorkflow',
-    defaultConfig: {
-      workflowId: 'replace-with-sheets-workflow-id',
-      payload: { sheetId: '...', values: ['{{context.email}}', '{{context.name}}'] },
-      waitStrategy: 'poll',
-      pollIntervalMs: 1000,
-      timeoutMs: 120000,
-    },
-  },
 ]
 
 export default function WorkflowEditor() {

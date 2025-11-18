@@ -70,6 +70,8 @@ export interface Profile {
   name: string
   user_agent?: string
   fingerprint?: any
+  workflowId?: number | null // ID của workflow được gán
+  workflow?: any | null // Thông tin workflow đã được gán (từ include)
   created_at: string
 }
 
@@ -271,6 +273,14 @@ export const api = {
     return response.data.data || response.data
   },
 
+  async startProfileWithWorkflow(profileId: number, data?: { proxyId?: number; vars?: Record<string, any> }): Promise<any> {
+    const response = await apiClient.post(`/api/profiles/${profileId}/start-with-workflow`, {
+      proxyId: data?.proxyId,
+      vars: data?.vars,
+    })
+    return response.data
+  },
+
   async stopSession(id: number): Promise<void> {
     try {
       await apiClient.post(`/api/sessions/${id}/stop`)
@@ -362,9 +372,10 @@ export const api = {
   },
 
   // Workflows
-  async getWorkflows(): Promise<any[]> {
+  async getWorkflows(fields?: string): Promise<any[]> {
     try {
-      const response = await apiClient.get('/api/workflows')
+      const url = fields ? `/api/workflows?fields=${fields}` : '/api/workflows'
+      const response = await apiClient.get(url)
       return response.data.data || response.data || []
     } catch (error: any) {
       if (error.response?.status === 404) {

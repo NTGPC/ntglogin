@@ -1,65 +1,24 @@
 import prisma from '../prismaClient'
 
-export const upsertFromN8n = async (items: Array<{ id: string; name: string }>) => {
-  const results = [] as any[]
-  for (const it of items) {
-    try {
-      // Check if workflow exists by n8nWorkflowId
-      const existing = await prisma.workflow.findFirst({
-        where: { n8nWorkflowId: it.id },
-      })
-      
-      if (existing) {
-        // Update existing
-        const wf = await prisma.workflow.update({
-          where: { id: existing.id },
-          data: { name: it.name, source: 'n8n' },
-        })
-        results.push(wf)
-      } else {
-        // Create new
-        const wf = await prisma.workflow.create({
-          data: { name: it.name, source: 'n8n', n8nWorkflowId: it.id },
-        })
-        results.push(wf)
-      }
-    } catch (err: any) {
-      console.error(`Error upserting workflow ${it.id}:`, err)
-      // Continue with other items
-    }
-  }
-  return results
-}
-
 export const listWorkflows = async () => {
-  // List all workflows that can be assigned to profiles
-  // Include both n8n workflows and local editor workflows
-  const all = await prisma.workflow.findMany({ 
+  return prisma.workflow.findMany({ 
     orderBy: { updatedAt: 'desc' },
     select: {
       id: true,
       name: true,
-      n8nWorkflowId: true,
       source: true,
       description: true,
       updatedAt: true,
       createdAt: true,
     }
   })
-  // Filter to only workflows that can be assigned (n8n or local editor)
-  return all.filter(w => 
-    w.source === 'n8n' || 
-    w.n8nWorkflowId !== null || 
-    w.source === 'local' || 
-    w.source === null
-  )
 }
 
-export const createWorkflow = async (data: { name: string; n8nWorkflowId: string; description?: string }) => {
-  return prisma.workflow.create({ data: { name: data.name, n8nWorkflowId: data.n8nWorkflowId, description: data.description, source: 'n8n' } })
+export const createWorkflow = async (data: { name: string; description?: string }) => {
+  return prisma.workflow.create({ data: { name: data.name, description: data.description, source: 'local' } })
 }
 
-export const updateWorkflow = async (id: number, data: { name?: string; n8nWorkflowId?: string; description?: string }) => {
+export const updateWorkflow = async (id: number, data: { name?: string; description?: string }) => {
   return prisma.workflow.update({ where: { id }, data })
 }
 

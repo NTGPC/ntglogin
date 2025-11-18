@@ -37,9 +37,6 @@ export const nodeTypes = {
   click: withHandles((props: any) => <Box {...props} title="Click" icon={<LuMousePointerClick size={16} />} />, { input: true, output: true }),
   typeText: withHandles((props: any) => <Box {...props} title="Type Text" icon={<LuType size={16} />} />, { input: true, output: true }),
   screenshot: withHandles((props: any) => <Box {...props} title="Screenshot" icon={<LuImage size={16} />} />, { input: true, output: true }),
-
-  n8nCallWebhook: withHandles((props: any) => <Box {...props} title="n8n Call Webhook" icon={<LuWebhook size={16} />} />, { input: true, output: true }),
-  n8nExecuteWorkflow: withHandles((props: any) => <Box {...props} title="n8n Execute Workflow" icon={<LuWorkflow size={16} />} />, { input: true, output: true }),
 }
 
 

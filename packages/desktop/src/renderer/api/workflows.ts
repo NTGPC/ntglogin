@@ -29,10 +29,5 @@ export const workflowsApi = {
   create: (data: Partial<Workflow>) => http<Workflow>('/api/workflows', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: Partial<Workflow>) => http<Workflow>(`/api/workflows/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   remove: (id: number) => http<void>(`/api/workflows/${id}`, { method: 'DELETE' }),
-  // n8n integration
-  listWorkflows: () => http<any[]>('/api/n8n-workflows'),
-  importFromN8n: () => http<any[]>('/api/n8n-workflows/importFromN8n', { method: 'POST' }),
-  assignProfiles: (workflowId: number, profileIds: number[]) => http<any>(`/api/n8n-workflows/${workflowId}/assign`, { method: 'POST', body: JSON.stringify({ profileIds }) }),
-  runWorkflow: (workflowId: number, profileIds: number[], payload?: any, options?: any) => http<any>(`/api/n8n-workflows/${workflowId}/run`, { method: 'POST', body: JSON.stringify({ profileIds, payload, options }) }),
 }
 

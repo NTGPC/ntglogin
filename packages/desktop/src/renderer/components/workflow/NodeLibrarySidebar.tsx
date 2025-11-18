@@ -9,7 +9,7 @@ type LibraryItem = {
   subtitle?: string
   icon: React.ReactNode
   initialData?: any
-  category: 'control' | 'navigation' | 'interaction' | 'data' | 'n8n'
+  category: 'control' | 'navigation' | 'interaction' | 'data'
 }
 
 const ITEMS: LibraryItem[] = [
@@ -25,14 +25,6 @@ const ITEMS: LibraryItem[] = [
   { id: 'typeText', type: 'typeText', title: 'Type Text', subtitle: 'Fill input', icon: <LuType />, category: 'interaction', initialData: { config: { selector: 'input', text: '' } } },
 
   { id: 'screenshot', type: 'screenshot', title: 'Screenshot', subtitle: 'Capture page', icon: <LuImage />, category: 'data' },
-
-  // n8n base nodes
-  { id: 'n8nExecuteWorkflow', type: 'n8nExecuteWorkflow', title: 'n8n Execute Workflow', subtitle: 'Trigger workflow, poll result', icon: <LuWorkflow />, category: 'n8n', initialData: { config: { workflowId: '', payload: {}, pollIntervalMs: 1000, timeoutMs: 120000 } } },
-  { id: 'n8nCallWebhook', type: 'n8nCallWebhook', title: 'n8n Call Webhook', subtitle: 'POST to webhook', icon: <LuWebhook />, category: 'n8n', initialData: { config: { path: '/webhook/test', payload: {}, headers: {} } } },
-  // Templates
-  { id: 'tplTelegram', type: 'n8nExecuteWorkflow', title: 'Telegram Send Message', subtitle: 'n8n template', icon: <LuWorkflow />, category: 'n8n', initialData: { config: { workflowId: 'replace-workflow-id', payload: { chatId: '123456', text: 'Hi from NTG!' }, pollIntervalMs: 1000, timeoutMs: 120000 } } },
-  { id: 'tplSheets', type: 'n8nExecuteWorkflow', title: 'Google Sheets Append Row', subtitle: 'n8n template', icon: <LuWorkflow />, category: 'n8n', initialData: { config: { workflowId: 'replace-workflow-id', payload: { sheetId: '', values: ['A','B','C'] }, pollIntervalMs: 1000, timeoutMs: 120000 } } },
-  { id: 'tplWebhook', type: 'n8nCallWebhook', title: 'HTTP Generic Webhook', subtitle: 'n8n template', icon: <LuWebhook />, category: 'n8n', initialData: { config: { path: '/webhook/my-flow', payload: {}, headers: {} } } },
 ]
 
 const TABS = [
@@ -40,7 +32,6 @@ const TABS = [
   { id: 'navigation', label: 'Navigation' },
   { id: 'interaction', label: 'Interaction' },
   { id: 'data', label: 'Data' },
-  { id: 'n8n', label: 'Integrations (n8n)' },
 ]
 
 export const NodeLibrarySidebar: React.FC = () => {

@@ -391,22 +391,6 @@ npm run prisma:generate  # Generate Prisma Client
 npm run seed             # Seed database
 ```
 
-### n8n Integration (Local)
-
-1) Run n8n service:
-
-```bash
-docker compose up -d n8n
-```
-
-Open `http://localhost:5678` (login with `N8N_USER`/`N8N_PASS`).
-
-2) In n8n, create the webhook or workflow you want (e.g., Telegram → Send Message).
-
-3) In the Workflow editor (Admin Web): drag "n8n Execute Workflow" or "n8n Call Webhook", fill Workflow ID or Webhook path, and map payload.
-
-4) Bulk run profiles; watch Executions for logs/results.
-
 ## 🐳 Docker Commands
 
 ```bash

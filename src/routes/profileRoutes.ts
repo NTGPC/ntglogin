@@ -10,6 +10,8 @@ router.post('/generate-fingerprint', profileController.generateFingerprint);
 router.post('/user-agent', profileController.getUserAgent);
 router.post('/', profileController.create);
 router.put('/:id', profileController.update);
+router.post('/update/:id', profileController.update); // Route POST mới để cập nhật profile (tránh lỗi CORS)
+router.post('/:id/start-with-workflow', profileController.startProfileWithWorkflow); // Route mới để start profile và tự động chạy workflow
 router.put('/:id/fingerprint', profileController.updateFingerprint);
 router.delete('/:id', profileController.remove);
 

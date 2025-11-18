@@ -6,6 +6,7 @@ export const getAllProfiles = async () => {
   return prisma.profile.findMany({
     include: {
       sessions: true,
+      workflow: true, // Lấy kèm thông tin workflow đã được gán
     },
   });
 };
@@ -15,6 +16,7 @@ export const getProfileById = async (id: number) => {
     where: { id },
     include: {
       sessions: true,
+      workflow: true, // Lấy kèm thông tin workflow đã được gán
     },
   });
 };

@@ -10,6 +10,7 @@ import Jobs from './pages/Jobs'
 import Executions from './pages/Executions'
 import Workflows from './pages/Workflows'
 import WorkflowEditor from './pages/WorkflowEditor'
+import AutomationBuilder from './pages/AutomationBuilder'
 import ProfileEditor from './components/ProfileEditor/ProfileEditor.jsx'
 import { api } from './lib/api'
 
@@ -60,6 +61,7 @@ function App() {
           <Route path="executions" element={<Executions />} />
           <Route path="workflows" element={<Workflows />} />
           <Route path="workflows/:id" element={<WorkflowEditor />} />
+          <Route path="automation/:profileId" element={<AutomationBuilder />} />
         </Route>
       </Routes>
     </BrowserRouter>

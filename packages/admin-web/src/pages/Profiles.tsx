@@ -193,7 +193,8 @@ export default function Profiles() {
   useEffect(() => {
     loadProfiles()
     loadProxies()
-    if (SHOW_WORKFLOWS) loadWorkflows()
+    loadWorkflows() // Luôn load workflows để hiển thị dropdown
+    if (SHOW_WORKFLOWS) loadAssignments()
     loadUserAgents()
   }, [])
 
@@ -258,11 +259,10 @@ export default function Profiles() {
 
   const loadWorkflows = async () => {
     try {
-      // Load n8n workflows only (not local editor workflows)
-      const response = await apiClient.get('/api/n8n-workflows')
-      const data = response.data || []
-      // Ensure it's an array
-      setWorkflows(Array.isArray(data) ? data : [])
+      // Chỉ lấy id và name để dropdown nhẹ hơn
+      const workflows = await api.getWorkflows('id,name')
+      setWorkflows(Array.isArray(workflows) ? workflows : [])
+      console.log('Đã tải thành công workflows:', workflows)
     } catch (error) {
       console.error('Failed to load workflows:', error)
       setWorkflows([])
@@ -273,7 +273,7 @@ export default function Profiles() {
     try {
       const profileIds = profiles.map(p => p.id)
       if (profileIds.length === 0) return
-      const response = await apiClient.get('/api/n8n-workflows/assignments', { params: { profileIds: profileIds.join(',') } })
+      const response = await apiClient.get('/api/workflows/assignments', { params: { profileIds: profileIds.join(',') } })
       const assignments = response.data || []
       const map: Record<number, any[]> = {}
       assignments.forEach((a: any) => {
@@ -312,6 +312,40 @@ export default function Profiles() {
     persistProfileProxyMap(next)
   }
 
+  // Hàm xử lý khi người dùng chọn một workflow mới
+  const handleWorkflowChange = async (profileId: number, newWorkflowId: string | number | null) => {
+    try {
+      const payload = {
+        workflowId: newWorkflowId === 'none' || newWorkflowId === '' ? null : newWorkflowId
+      }
+
+      // DÒNG MỚI: Gọi đến route POST mới để tránh lỗi CORS
+      await apiClient.post(`/api/profiles/update/${profileId}`, payload)
+
+      // Cập nhật lại state của giao diện để hiển thị ngay lập tức
+      const workflowIdValue = newWorkflowId === 'none' || newWorkflowId === '' ? null : Number(newWorkflowId)
+      setProfiles((currentProfiles) =>
+        currentProfiles.map((p) =>
+          p.id === profileId
+            ? {
+                ...p,
+                workflowId: workflowIdValue,
+                workflow: workflowIdValue
+                  ? workflows.find((w) => w.id === workflowIdValue) || null
+                  : null,
+              }
+            : p
+        )
+      )
+      
+      // Bạn có thể bỏ alert đi để trải nghiệm mượt hơn
+      // console.log('✅ Cập nhật workflow thành công!')
+    } catch (error) {
+      console.error('Lỗi khi cập nhật workflow (dùng POST):', error)
+      alert('Cập nhật workflow thất bại!')
+    }
+  }
+
   const applyProxyToSelected = () => {
     if (!selectedIds.length) return
     const next = { ...profileProxyMap }
@@ -335,7 +369,7 @@ export default function Profiles() {
       return
     }
     try {
-      await apiClient.post(`/api/n8n-workflows/${bulkWorkflowId}/assign`, { profileIds: selectedIds })
+      await apiClient.post(`/api/workflows/${bulkWorkflowId}/assign`, { profileIds: selectedIds })
       alert(`Workflow applied to ${selectedIds.length} selected profile(s)`)
       await loadAssignments()
     } catch (error: any) {
@@ -355,7 +389,7 @@ export default function Profiles() {
     }
     try {
       const allProfileIds = filteredProfiles.map((p) => p.id)
-      await apiClient.post(`/api/n8n-workflows/${bulkWorkflowId}/assign`, { profileIds: allProfileIds })
+      await apiClient.post(`/api/workflows/${bulkWorkflowId}/assign`, { profileIds: allProfileIds })
       alert(`Workflow applied to ${allProfileIds.length} profile(s)`)
       await loadAssignments()
     } catch (error: any) {
@@ -386,29 +420,15 @@ export default function Profiles() {
     }
 
     try {
-      // Check if this is n8n workflow or local workflow
-      const workflow = workflows.find((w: any) => w.id === runWorkflowId)
-      const isN8nWorkflow = workflow?.n8nWorkflowId || workflow?.source === 'n8n'
-      
       const vars: Record<string, string> = {}
       if (runWorkflowVars.email) vars.email = runWorkflowVars.email
       if (runWorkflowVars.password) vars.password = runWorkflowVars.password
 
-      if (isN8nWorkflow) {
-        // Use n8n workflow run endpoint
-        await apiClient.post(`/api/n8n-workflows/${runWorkflowId}/run`, { 
-          profileIds,
-          vars: Object.keys(vars).length > 0 ? vars : undefined,
-        })
-        alert(`✅ Workflow queued for execution! Check Executions page for status.`)
-      } else {
-        // Use local workflow execute endpoint
-        await apiClient.post(`/api/workflows/${runWorkflowId}/execute`, { 
-          profileIds,
-          vars: Object.keys(vars).length > 0 ? vars : undefined,
-        })
-        alert(`✅ Workflow queued for execution! Check Executions page for status.`)
-      }
+      await apiClient.post(`/api/workflows/${runWorkflowId}/execute`, { 
+        profileIds,
+        vars: Object.keys(vars).length > 0 ? vars : undefined,
+      })
+      alert(`✅ Workflow queued for execution! Check Executions page for status.`)
 
       setRunWorkflowDialogOpen(false)
       setRunWorkflowProfileId(null)
@@ -660,12 +680,14 @@ export default function Profiles() {
   const handleStart = async (profileId: number) => {
     const proxyId = profileProxyMap[profileId]
     try {
-      await api.createSession({ profileId, proxyId })
-      alert('Session started successfully! Browser should open now.')
+      // Gọi endpoint mới để tự động chạy workflow nếu profile có workflowId
+      const result = await api.startProfileWithWorkflow(profileId, { proxyId })
+      const message = result.message || 'Session started successfully! Browser should open now.'
+      alert(message)
       loadProfiles()
     } catch (error: any) {
-      console.error('Failed to start session:', error)
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to start session'
+      console.error('Failed to start profile:', error)
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to start profile'
       alert(`Lỗi: ${errorMessage}`)
     }
   }
@@ -763,17 +785,6 @@ export default function Profiles() {
               </option>
             ))}
           </select>
-          <Button variant="outline" onClick={async () => {
-            try {
-              await apiClient.post('/api/n8n-workflows/importFromN8n')
-              await loadWorkflows()
-              alert('Synced workflows from n8n!')
-            } catch (e: any) {
-              alert(e?.message || 'Failed to sync from n8n')
-            }
-          }} className="text-xs">
-            Sync from n8n
-          </Button>
           <Button variant="outline" onClick={applyWorkflowToSelected} disabled={!selectedIds.length || !bulkWorkflowId}>
             Apply to Selected
           </Button>
@@ -798,6 +809,7 @@ export default function Profiles() {
               <TableHead>Name</TableHead>
               <TableHead>User Agent</TableHead>
               <TableHead>Chose Proxy</TableHead>
+              <TableHead>Choose Workflow</TableHead>
               <TableHead>Change Driver</TableHead>
               {SHOW_WORKFLOWS && <TableHead>Workflows</TableHead>}
               <TableHead>Created</TableHead>
@@ -840,6 +852,20 @@ export default function Profiles() {
                       {proxies.filter((p) => p.active).map((proxy) => (
                         <option key={proxy.id} value={proxy.id}>
                           {proxy.host}:{proxy.port} ({proxy.type})
+                        </option>
+                      ))}
+                    </select>
+                  </TableCell>
+                  <TableCell>
+                    <select
+                      value={profile.workflowId || 'none'}
+                      onChange={(e) => handleWorkflowChange(profile.id, e.target.value)}
+                      className="flex h-9 w-56 rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="none">None (No workflow)</option>
+                      {workflows.map((wf) => (
+                        <option key={wf.id} value={wf.id}>
+                          {wf.name}
                         </option>
                       ))}
                     </select>
