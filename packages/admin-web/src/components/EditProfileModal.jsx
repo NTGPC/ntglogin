@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import { USER_AGENT_LIBRARY } from '../constants/user-agents'
 
 /**
  * @typedef {Object} Profile
@@ -36,24 +37,33 @@ import axios from 'axios'
  * @returns {JSX.Element|null}
  */
 export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    userAgent: '',
-    os: '',
-    arch: '64-bit',
-    browser: 'Auto',
-    screen: 'Auto',
-    canvas: 'Noise',
-    clientRects: 'Off',
-    audioContext: 'Off',
-    webglImage: 'Off',
-    webglMetadata: 'Mask',
-    geoEnabled: false,
-    geoMode: 'original',
-    webrtcMainIp: false,
-    proxyMode: 'Manual',
-    proxy: { host: '', port: '', username: '', password: '' },
-  })
+  // --- NGUỒN CHÂN LÝ DUY NHẤT ---
+  const [profile, setProfile] = useState(() => {
+    const initialAgent = USER_AGENT_LIBRARY[0] || { value: '', os: '' };
+    return {
+      name: '',
+      userAgent: initialAgent.value,
+      os: initialAgent.os,
+      arch: '64-bit',
+      browser: 'Auto',
+      screen: 'Auto',
+      screenWidth: 1920,
+      screenHeight: 1080,
+      canvas: 'Noise',
+      clientRects: 'Off',
+      audioContext: 'Off',
+      webglImage: 'Off',
+      webglMetadata: 'Mask',
+      geoEnabled: false,
+      geoMode: 'original',
+      webrtcMainIp: false,
+      proxyMode: 'Manual',
+      proxy: { host: '', port: '', username: '', password: '' },
+    };
+  });
+
+  // State để quản lý nội dung của ô JSON
+  const [fingerprintJson, setFingerprintJson] = useState('');
 
   const [isInitialLoad, setIsInitialLoad] = useState(true)
 
@@ -61,34 +71,56 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
   useEffect(() => {
     if (open && initial) {
       setIsInitialLoad(true)
-      setFormData({
+      // Parse screen resolution string thành width/height
+      const parseScreenResolution = (screenStr) => {
+        if (!screenStr || screenStr === 'Auto') return { width: 1920, height: 1080 }
+        const match = screenStr.match(/(\d+)x(\d+)/)
+        if (match) {
+          return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) }
+        }
+        return { width: 1920, height: 1080 }
+      }
+      const { width, height } = parseScreenResolution(initial.screen)
+      
+      setProfile({
         name: initial.name || '',
-        userAgent: initial.userAgent || '',
-        os: initial.os || '',
+        userAgent: initial.userAgent || initial.user_agent || USER_AGENT_LIBRARY[0]?.value || '',
+        os: initial.os || initial.osName || USER_AGENT_LIBRARY[0]?.os || '',
         arch: initial.arch || '64-bit',
         browser: initial.browser || 'Auto',
         screen: initial.screen || 'Auto',
-        canvas: initial.canvas || 'Noise',
-        clientRects: initial.clientRects || 'Off',
-        audioContext: initial.audioContext || 'Off',
-        webglImage: initial.webglImage || 'Off',
-        webglMetadata: initial.webglMetadata || 'Mask',
+        screenWidth: initial.screenWidth || width,
+        screenHeight: initial.screenHeight || height,
+        canvas: initial.canvas || initial.canvasMode || 'Noise',
+        clientRects: initial.clientRects || initial.clientRectsMode || 'Off',
+        audioContext: initial.audioContext || initial.audioCtxMode || 'Off',
+        webglImage: initial.webglImage || initial.webglImageMode || 'Off',
+        webglMetadata: initial.webglMetadata || initial.webglMetaMode || 'Mask',
         geoEnabled: initial.geoEnabled || false,
         geoMode: initial.geoMode || 'original',
-        webrtcMainIp: initial.webrtcMainIp || false,
+        webrtcMainIp: initial.webrtcMainIp || initial.webrtcMainIP || false,
         proxyMode: initial.proxyMode || 'Manual',
         proxy: initial.proxy || { host: '', port: '', username: '', password: '' },
       })
+      
+      // Set fingerprintJson từ initial data nếu có
+      if (initial.fingerprintJson || initial.fingerprint) {
+        setFingerprintJson(JSON.stringify(initial.fingerprintJson || initial.fingerprint, null, 2));
+      }
+      
       setTimeout(() => setIsInitialLoad(false), 100)
     } else if (open && !initial) {
       setIsInitialLoad(true)
-      setFormData({
+      const initialAgent = USER_AGENT_LIBRARY[0] || { value: '', os: '' };
+      setProfile({
         name: '',
-        userAgent: '',
-        os: '',
+        userAgent: initialAgent.value,
+        os: initialAgent.os,
         arch: '64-bit',
         browser: 'Auto',
         screen: 'Auto',
+        screenWidth: 1920,
+        screenHeight: 1080,
         canvas: 'Noise',
         clientRects: 'Off',
         audioContext: 'Off',
@@ -100,6 +132,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
         proxyMode: 'Manual',
         proxy: { host: '', port: '', username: '', password: '' },
       })
+      setFingerprintJson(''); // Reset fingerprintJson khi tạo mới
       setTimeout(() => setIsInitialLoad(false), 100)
     }
   }, [open, initial])
@@ -120,18 +153,125 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     }
   }, [open, onClose])
 
-  // LOGIC ĐÚNG: Dùng một state object duy nhất để quản lý TOÀN BỘ form
-  // Tạo hàm update chung cho các trường đơn giản
-  const handleFormChange = (field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
+  // --- BỘ NÃO ĐỒNG BỘ HÓA: TỪ LỰA CHỌN -> XUỐNG JSON ---
+  useEffect(() => {
+    if (isInitialLoad) return; // Bỏ qua lần render đầu tiên
 
-  // Đặc biệt xử lý các object lồng nhau (như proxy, webgl, screen, etc.)
+    const generatedObject = {
+      userAgent: profile.userAgent,
+      user_agent: profile.userAgent,
+      os: profile.os,
+      osName: profile.os,
+      viewport: { 
+        width: profile.screenWidth, 
+        height: profile.screenHeight 
+      },
+      screenWidth: profile.screenWidth,
+      screenHeight: profile.screenHeight,
+      canvasMode: profile.canvas,
+      clientRectsMode: profile.clientRects,
+      audioCtxMode: profile.audioContext,
+      webglImageMode: profile.webglImage,
+      webglMetaMode: profile.webglMetadata,
+      geoEnabled: profile.geoEnabled,
+      webrtcMainIP: profile.webrtcMainIp,
+    };
+    setFingerprintJson(JSON.stringify(generatedObject, null, 2));
+  }, [profile, isInitialLoad]); // Chạy mỗi khi state `profile` thay đổi
+
+  // --- HÀM CẬP NHẬT TỪ CÁC DROPDOWN ---
+  const handleUserAgentChange = (e) => {
+    const selectedAgent = USER_AGENT_LIBRARY.find(agent => agent.value === e.target.value);
+    if (selectedAgent) {
+      setProfile(prev => ({
+        ...prev,
+        userAgent: selectedAgent.value,
+        os: selectedAgent.os,
+      }));
+    }
+  };
+
+  const handleScreenResolutionChange = (e) => {
+    const screenStr = e.target.value;
+    if (screenStr === 'Auto') {
+      setProfile(prev => ({
+        ...prev,
+        screen: 'Auto',
+        screenWidth: 1920,
+        screenHeight: 1080
+      }));
+    } else {
+      const match = screenStr.match(/(\d+)x(\d+)/);
+      if (match) {
+        const width = parseInt(match[1], 10);
+        const height = parseInt(match[2], 10);
+        setProfile(prev => ({
+          ...prev,
+          screen: screenStr,
+          screenWidth: width,
+          screenHeight: height
+        }));
+      }
+    }
+  };
+
+  const handleScreenWidthChange = (e) => {
+    const width = parseInt(e.target.value, 10) || 1920;
+    setProfile(prev => ({
+      ...prev,
+      screenWidth: width,
+      screen: `${width}x${prev.screenHeight}`
+    }));
+  };
+
+  const handleScreenHeightChange = (e) => {
+    const height = parseInt(e.target.value, 10) || 1080;
+    setProfile(prev => ({
+      ...prev,
+      screenHeight: height,
+      screen: `${prev.screenWidth}x${height}`
+    }));
+  };
+
+  // --- HÀM RANDOMIZE ALL ---
+  const handleRandomizeAll = () => {
+    // Lấy ngẫu nhiên một user agent từ thư viện
+    const randomAgent = USER_AGENT_LIBRARY[Math.floor(Math.random() * USER_AGENT_LIBRARY.length)];
+    
+    // Lấy ngẫu nhiên một độ phân giải
+    const resolutions = [
+      { w: 1920, h: 1080 },
+      { w: 1366, h: 768 },
+      { w: 1600, h: 900 },
+      { w: 2560, h: 1440 }
+    ];
+    const randomRes = resolutions[Math.floor(Math.random() * resolutions.length)];
+
+    // Randomize các trường fingerprint
+    const canvasModes = ['Noise', 'Off', 'Block'];
+    const offNoiseModes = ['Off', 'Noise'];
+    const webglMetaModes = ['Mask', 'Real'];
+
+    // Cập nhật TOÀN BỘ state cùng lúc
+    setProfile(prev => ({
+      ...prev,
+      userAgent: randomAgent.value,
+      os: randomAgent.os,
+      screenWidth: randomRes.w,
+      screenHeight: randomRes.h,
+      screen: `${randomRes.w}x${randomRes.h}`,
+      canvas: canvasModes[Math.floor(Math.random() * canvasModes.length)],
+      clientRects: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
+      audioContext: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
+      webglImage: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
+      webglMetadata: webglMetaModes[Math.floor(Math.random() * webglMetaModes.length)],
+      geoEnabled: Math.random() > 0.5,
+      webrtcMainIp: Math.random() > 0.5,
+    }));
+  };
+
   const handleNestedFormChange = (parent, field, value) => {
-    setFormData((prev) => ({
+    setProfile((prev) => ({
       ...prev,
       [parent]: {
         ...prev[parent],
@@ -140,10 +280,14 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     }))
   }
 
-  const generateUserAgent = useCallback(async (skipCheck = false, currentFormData) => {
-    if (!currentFormData) return
+  const handleFieldChange = (field, value) => {
+    setProfile(prev => ({ ...prev, [field]: value }));
+  }
+
+  const generateUserAgent = useCallback(async (skipCheck = false, currentProfile) => {
+    if (!currentProfile) return
     
-    if (!skipCheck && !currentFormData.os) {
+    if (!skipCheck && !currentProfile.os) {
       return
     }
 
@@ -156,8 +300,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
         'Auto': 'chrome'
       }
 
-      const browser = browserMap[currentFormData.browser] || 'chrome'
-      let os = currentFormData.os
+      const browser = browserMap[currentProfile.browser] || 'chrome'
+      let os = currentProfile.os
 
       if (!os) return
 
@@ -180,7 +324,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
       })
 
       if (response.data?.success && response.data?.userAgent) {
-        setFormData((prev) => ({
+        setProfile((prev) => ({
           ...prev,
           userAgent: response.data.userAgent
         }))
@@ -192,38 +336,70 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
 
   // Auto-generate User Agent when OS, browser, or arch changes
   useEffect(() => {
-    if (!isInitialLoad && formData.os) {
-      generateUserAgent(true, formData)
+    if (!isInitialLoad && profile.os) {
+      generateUserAgent(true, profile)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.os, formData.browser, formData.arch, isInitialLoad])
+  }, [profile.os, profile.browser, profile.arch, isInitialLoad])
 
   const handleChange = (field, value) => {
     if (field.startsWith('proxy.')) {
       const proxyField = field.split('.')[1]
       handleNestedFormChange('proxy', proxyField, value)
     } else {
-      const prevOs = formData.os
+      const prevOs = profile.os
       if (field === 'os' && value !== prevOs && value) {
-        setFormData((prev) => ({
+        setProfile((prev) => ({
           ...prev,
           [field]: value,
           userAgent: '',
         }))
       } else {
-        handleFormChange(field, value)
+        handleFieldChange(field, value)
       }
     }
   }
 
-  // Khi nhấn nút, chỉ cần gửi đi TOÀN BỘ state object đã được cập nhật
+  // --- HÀM SUBMIT ---
   const handleSubmit = (e) => {
     e.preventDefault()
-    console.log("Đang gửi profile data hoàn chỉnh:", formData)
-    onUpdate({
-      ...formData,
+    
+    // Parse fingerprintJson nếu có (cho phép user paste JSON vào)
+    let finalFingerprint = null;
+    try {
+      finalFingerprint = JSON.parse(fingerprintJson);
+    } catch (error) {
+      // Nếu parse lỗi, tạo từ profile state
+      finalFingerprint = {
+        userAgent: profile.userAgent,
+        user_agent: profile.userAgent,
+        os: profile.os,
+        osName: profile.os,
+        viewport: {
+          width: profile.screenWidth,
+          height: profile.screenHeight,
+        },
+        screenWidth: profile.screenWidth,
+        screenHeight: profile.screenHeight,
+        canvasMode: profile.canvas,
+        clientRectsMode: profile.clientRects,
+        audioCtxMode: profile.audioContext,
+        webglImageMode: profile.webglImage,
+        webglMetaMode: profile.webglMetadata,
+        geoEnabled: profile.geoEnabled,
+        webrtcMainIP: profile.webrtcMainIp,
+      };
+    }
+
+    const dataToSend = {
+      ...profile,
       id: initial?.id,
-    })
+      fingerprint: finalFingerprint,
+      fingerprintJson: fingerprintJson || JSON.stringify(finalFingerprint, null, 2),
+    };
+
+    console.log("Dữ liệu gửi đi:", dataToSend);
+    onUpdate(dataToSend);
   }
 
   if (!open) return null
@@ -243,8 +419,15 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-[#2a2a2a] flex-shrink-0">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-[#2a2a2a] flex-shrink-0 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-foreground">Edit Profile</h2>
+          <button
+            type="button"
+            onClick={handleRandomizeAll}
+            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+          >
+            🎲 Randomize All
+          </button>
         </div>
 
         {/* Scrollable Form Content */}
@@ -261,8 +444,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 <input
                   id="profile-name"
                   type="text"
-                  value={formData.name}
-                  onChange={(e) => handleFormChange('name', e.target.value)}
+                  value={profile.name}
+                  onChange={(e) => handleFieldChange('name', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
@@ -272,11 +455,32 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 <label htmlFor="profile-ua" className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
                   User Agent
                 </label>
+                
+                {/* Dropdown User Agent từ thư viện */}
+                <div className="mb-2">
+                  <select
+                    id="profile-ua-select"
+                    value={profile.userAgent}
+                    onChange={handleUserAgentChange} // <--- GỌI HÀM GIAO TIẾP
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">-- Chọn từ thư viện hoặc nhập thủ công --</option>
+                    {USER_AGENT_LIBRARY.map(agent => (
+                      <option key={agent.name} value={agent.value}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Chọn User Agent từ thư viện sẽ tự động cập nhật OS tương ứng.
+                  </p>
+                </div>
+
                 <div className="flex gap-2">
                   <textarea
                     id="profile-ua"
-                    value={formData.userAgent}
-                    onChange={(e) => handleFormChange('userAgent', e.target.value)}
+                    value={profile.userAgent}
+                    onChange={(e) => handleFieldChange('userAgent', e.target.value)}
                     rows={3}
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
                     placeholder="Mozilla/5.0..."
@@ -284,8 +488,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   <div className="flex flex-col gap-2">
                     <button
                       type="button"
-                      onClick={() => generateUserAgent(false, formData)}
-                      disabled={!formData.os}
+                      onClick={() => generateUserAgent(false, profile)}
+                      disabled={!profile.os}
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
                     >
                       Generate
@@ -305,23 +509,33 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="profile-os" className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
-                    OS
+                    OS <span className="text-xs text-gray-500">(Tự động cập nhật khi chọn User Agent)</span>
                   </label>
-                  <select
+                  <input
                     id="profile-os"
-                    value={formData.os}
+                    type="text"
+                    value={profile.os} // <--- LUÔN ĐỒNG BỘ VỚI STATE
+                    readOnly // Người dùng không nên sửa tay trường này khi đã chọn từ thư viện
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-gray-50 dark:bg-[#1a1a1a] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-not-allowed"
+                    aria-label="OS"
+                    placeholder="Chọn User Agent từ thư viện để tự động điền"
+                  />
+                  {/* Vẫn cho phép chọn thủ công nếu cần */}
+                  <select
+                    id="profile-os-select"
+                    value={profile.os}
                     onChange={(e) => {
                       const newOs = e.target.value
-                      setFormData((prev) => ({
+                      setProfile((prev) => ({
                         ...prev,
                         os: newOs,
                         userAgent: newOs !== prev.os && newOs ? '' : prev.userAgent
                       }))
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    aria-label="OS"
+                    className="w-full mt-2 px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-label="OS Select"
                   >
-                    <option value="">Select OS</option>
+                    <option value="">Hoặc chọn OS thủ công</option>
                     <option value="Windows 10">Windows 10</option>
                     <option value="Windows 11">Windows 11</option>
                     <option value="macOS">macOS</option>
@@ -340,8 +554,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     Architecture
                   </label>
                   <select
-                    value={formData.arch}
-                    onChange={(e) => handleFormChange('arch', e.target.value)}
+                    value={profile.arch}
+                    onChange={(e) => handleFieldChange('arch', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="32-bit">32-bit</option>
@@ -357,8 +571,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     id="profile-browser"
-                    value={formData.browser}
-                    onChange={(e) => handleFormChange('browser', e.target.value)}
+                    value={profile.browser}
+                    onChange={(e) => handleFieldChange('browser', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Browser"
                   >
@@ -376,8 +590,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   </label>
                   <select
                     id="profile-screen"
-                    value={formData.screen}
-                    onChange={(e) => handleFormChange('screen', e.target.value)}
+                    value={profile.screen}
+                    onChange={handleScreenResolutionChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Screen Resolution"
                   >
@@ -387,6 +601,26 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     <option value="1920x1080">1920x1080</option>
                     <option value="2560x1440">2560x1440</option>
                   </select>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Width</label>
+                      <input
+                        type="number"
+                        value={profile.screenWidth}
+                        onChange={handleScreenWidthChange}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Height</label>
+                      <input
+                        type="number"
+                        value={profile.screenHeight}
+                        onChange={handleScreenHeightChange}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -395,14 +629,37 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-foreground">Fingerprint</h3>
               
+              {/* Ô Fingerprint (JSON) - Tự động đồng bộ từ các trường khác */}
+              <div>
+                <label htmlFor="profile-fingerprint-json" className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
+                  Fingerprint JSON <span className="text-xs text-gray-500">(Tự động cập nhật khi thay đổi các trường trên)</span>
+                </label>
+                <textarea
+                  id="profile-fingerprint-json"
+                  value={fingerprintJson}
+                  onChange={(e) => {
+                    // Đây là phần dành cho chuyên gia: cho phép dán JSON vào
+                    // Khi dán vào, chúng ta có thể cố gắng parse và cập nhật ngược lại state `profile`
+                    // Hoặc đơn giản là chỉ lưu chuỗi JSON này khi submit
+                    setFingerprintJson(e.target.value);
+                  }}
+                  rows={8}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+                  placeholder='{"userAgent": "...", "viewport": {...}, ...}'
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  JSON này được tự động tạo từ các trường trên. Bạn có thể chỉnh sửa trực tiếp hoặc dán JSON vào đây.
+                </p>
+              </div>
+              
               <div className="grid grid-cols-2 gap-4">
                 <div role="radiogroup" aria-label="Canvas">
                   <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
                     Canvas
                   </label>
                   <select
-                    value={formData.canvas}
-                    onChange={(e) => handleFormChange('canvas', e.target.value)}
+                    value={profile.canvas}
+                    onChange={(e) => handleFieldChange('canvas', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Canvas"
                   >
@@ -417,8 +674,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     Client Rects
                   </label>
                   <select
-                    value={formData.clientRects}
-                    onChange={(e) => handleFormChange('clientRects', e.target.value)}
+                    value={profile.clientRects}
+                    onChange={(e) => handleFieldChange('clientRects', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Client Rects"
                   >
@@ -434,8 +691,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     Audio Context
                   </label>
                   <select
-                    value={formData.audioContext}
-                    onChange={(e) => handleFormChange('audioContext', e.target.value)}
+                    value={profile.audioContext}
+                    onChange={(e) => handleFieldChange('audioContext', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="Audio Context"
                   >
@@ -449,8 +706,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     WebGL Image
                   </label>
                   <select
-                    value={formData.webglImage}
-                    onChange={(e) => handleFormChange('webglImage', e.target.value)}
+                    value={profile.webglImage}
+                    onChange={(e) => handleFieldChange('webglImage', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="WebGL Image"
                   >
@@ -465,8 +722,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   WebGL Metadata
                 </label>
                 <select
-                  value={formData.webglMetadata}
-                  onChange={(e) => handleFormChange('webglMetadata', e.target.value)}
+                  value={profile.webglMetadata}
+                  onChange={(e) => handleFieldChange('webglMetadata', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   aria-label="WebGL Metadata"
                 >
@@ -484,21 +741,21 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
-                    checked={formData.geoEnabled}
-                    onChange={(e) => handleFormChange('geoEnabled', e.target.checked)}
+                    checked={profile.geoEnabled}
+                    onChange={(e) => handleFieldChange('geoEnabled', e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700 dark:text-foreground">Geolocation Enabled</span>
                 </label>
 
-                {formData.geoEnabled && (
+                {profile.geoEnabled && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
                       Geo Mode
                     </label>
                     <select
-                      value={formData.geoMode}
-                      onChange={(e) => handleFormChange('geoMode', e.target.value)}
+                      value={profile.geoMode}
+                      onChange={(e) => handleFieldChange('geoMode', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="original">Original</option>
@@ -510,8 +767,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
-                    checked={formData.webrtcMainIp}
-                    onChange={(e) => handleFormChange('webrtcMainIp', e.target.checked)}
+                    checked={profile.webrtcMainIp}
+                    onChange={(e) => handleFieldChange('webrtcMainIp', e.target.checked)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700 dark:text-foreground">WebRTC Main IP</span>
@@ -528,8 +785,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   Proxy Mode
                 </label>
                 <select
-                  value={formData.proxyMode}
-                  onChange={(e) => handleFormChange('proxyMode', e.target.value)}
+                  value={profile.proxyMode}
+                  onChange={(e) => handleFieldChange('proxyMode', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="Manual">Manual</option>
@@ -537,7 +794,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 </select>
               </div>
 
-              {formData.proxyMode === 'Manual' && (
+              {profile.proxyMode === 'Manual' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="profile-proxy-host" className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
@@ -546,7 +803,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     <input
                       id="profile-proxy-host"
                       type="text"
-                      value={formData.proxy?.host || ''}
+                      value={profile.proxy?.host || ''}
                       onChange={(e) => handleChange('proxy.host', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="192.168.1.1"
@@ -560,7 +817,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     <input
                       id="profile-proxy-port"
                       type="text"
-                      value={formData.proxy?.port || ''}
+                      value={profile.proxy?.port || ''}
                       onChange={(e) => handleChange('proxy.port', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="8080"
@@ -574,7 +831,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     <input
                       id="profile-proxy-username"
                       type="text"
-                      value={formData.proxy?.username || ''}
+                      value={profile.proxy?.username || ''}
                       onChange={(e) => handleChange('proxy.username', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Optional"
@@ -588,7 +845,7 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     <input
                       id="profile-proxy-password"
                       type="password"
-                      value={formData.proxy?.password || ''}
+                      value={profile.proxy?.password || ''}
                       onChange={(e) => handleChange('proxy.password', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="Optional"

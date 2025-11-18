@@ -265,6 +265,16 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
       dataToUpdate.user_agent = body.user_agent;
       dataToUpdate.userAgent = body.user_agent; // Đồng bộ cả 2 trường
     }
+    
+    // === ĐẢM BẢO DÒNG NÀY TỒN TẠI! ===
+    // Cập nhật screenWidth và screenHeight từ body
+    if (body.screenWidth !== undefined) {
+      dataToUpdate.screenWidth = Number(body.screenWidth);
+    }
+    if (body.screenHeight !== undefined) {
+      dataToUpdate.screenHeight = Number(body.screenHeight);
+    }
+    // ==================================
 
     // ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT CHO WORKFLOW
     if (body.workflowId !== undefined) {
@@ -327,129 +337,147 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+// =======================================================================
+// === PHIÊN BẢN V4 - HÀM CONTROLLER BẤT BẠI ===
+// File: profileController.ts
+// =======================================================================
 export const startProfileWithWorkflow = asyncHandler(async (req: Request, res: Response) => {
-  const profileId = parseInt(req.params.id);
-  const { proxyId, vars } = req.body || {};
+  // Parse và validate profileId
+  const profileId = parseInt(req.params.id, 10);
+  if (isNaN(profileId) || profileId <= 0) {
+    throw new AppError(`Invalid profile ID: ${req.params.id}`, 400);
+  }
 
-  console.log('================================');
-  console.log(`[START] Nhận yêu cầu khởi chạy profile ID: ${profileId}`);
-  console.log(`[START] Proxy ID: ${proxyId || 'none'}`);
-  console.log('================================');
+  console.log(`[CONTROLLER] Nhận yêu cầu cho profile ID: ${profileId}`);
 
+  // BƯỚC 1: LẤY DỮ LIỆU PROFILE TỪ DATABASE
+  // Chỉ một lần duy nhất, và dùng biến này cho tất cả các bước sau.
+  const profileData = await prisma.profile.findUnique({
+    where: { id: profileId },
+    include: { workflow: true }
+  });
+
+  // BƯỚC 2: KIỂM TRA DỮ LIỆU NGAY LẬP TỨC
+  if (!profileData) {
+    console.error(`[CONTROLLER] LỖI: Không tìm thấy profile với ID ${profileId} trong database.`);
+    throw new AppError(`Profile not found: ${profileId}`, 404);
+  }
+
+  // Log ra để xác nhận dữ liệu được truyền đi là ĐÚNG
+  console.log(`[CONTROLLER] Dữ liệu sẽ được gửi đến browserService:`, {
+    id: profileData.id,
+    name: profileData.name,
+    userAgent: profileData.userAgent || profileData.user_agent,
+    user_agent: profileData.user_agent,
+    screenWidth: profileData.screenWidth,
+    screenHeight: profileData.screenHeight,
+    workflowId: profileData.workflowId,
+    workflow: profileData.workflow ? { id: profileData.workflow.id, name: profileData.workflow.name } : null,
+  });
+
+  // BƯỚC 3: GỌI SERVICE VÀ TRUYỀN ĐÚNG BIẾN ĐÓ ĐI
+  // Không tạo thêm biến mới, không merge object, không làm gì phức tạp.
+  // Chỉ đơn giản là truyền thẳng 'profileData' đi.
   try {
-    // 1. TÌM PROFILE VÀ WORKFLOW TRONG CSDL
-    const profile = await prisma.profile.findUnique({
-      where: { id: profileId },
+    const browserService = await import('../services/browserService');
+    
+    // Tạo session trước
+    const session = await prisma.session.create({
+      data: {
+        profile_id: profileId,
+        proxy_id: req.body?.proxyId ? Number(req.body.proxyId) : null,
+        status: 'running',
+        started_at: new Date(),
+      },
       include: {
-        workflow: true, // Lấy kèm thông tin workflow đã được gán
+        profile: true,
+        proxy: true,
       },
     });
+    console.log(`✅ [CONTROLLER] Session created: ${session.id}`);
 
-    if (!profile) {
-      throw new AppError(`Profile với ID ${profileId} không tồn tại.`, 404);
+    // Get proxy config nếu có
+    let proxyConfig: { host: string; port: number; username?: string; password?: string; type: string } | undefined = undefined;
+    if (req.body?.proxyId) {
+      const proxyRecord = await prisma.proxy.findUnique({
+        where: { id: Number(req.body.proxyId) },
+      });
+      if (proxyRecord && proxyRecord.active) {
+        proxyConfig = {
+          host: proxyRecord.host,
+          port: proxyRecord.port,
+          username: proxyRecord.username || undefined,
+          password: proxyRecord.password || undefined,
+          type: proxyRecord.type,
+        };
+      }
     }
 
-    console.log(`[START] Đã tìm thấy profile: ${profile.name}`);
-    console.log(`[START] Workflow ID: ${profile.workflowId || 'none'}`);
-
-    // 2. NẾU CÓ WORKFLOW, KHỞI CHẠY PROFILE VÀ THỰC THI WORKFLOW
-    if (profile.workflowId && profile.workflow) {
-      console.log(`[START] Tìm thấy workflow "${profile.workflow.name}". Sẽ khởi chạy profile và thực thi workflow...`);
-      
-      // Build userDataDir (persistent profile directory)
-      const path = (await import('path')).default;
-      const fs = (await import('fs')).default;
-      const profilesDir = path.join(process.cwd(), 'browser_profiles');
-      if (!fs.existsSync(profilesDir)) {
-        fs.mkdirSync(profilesDir, { recursive: true });
-      }
-      const userDataDir = path.join(profilesDir, `profile_${profileId}`);
-
-      // Get executable path
-      let executablePath = process.env.CHROME_EXECUTABLE_PATH || '';
-      if (profile.fingerprint && typeof profile.fingerprint === 'object') {
-        const fp = profile.fingerprint as any;
-        if (fp.executablePath) {
-          executablePath = fp.executablePath;
-        }
-      }
-
-      // Default Chrome paths for Windows
-      if (!executablePath) {
-        const os = (await import('os')).default;
-        const platform = os.platform();
-        if (platform === 'win32') {
-          executablePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-          if (!fs.existsSync(executablePath)) {
-            executablePath = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-          }
-        } else if (platform === 'darwin') {
-          executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-        } else {
-          executablePath = 'google-chrome';
-        }
-      }
-
-      // Get proxy config
-      let proxy: { host: string; port: number; username?: string; password?: string } | undefined = undefined;
-      if (proxyId) {
-        const proxyRecord = await prisma.proxy.findUnique({
-          where: { id: Number(proxyId) },
-        });
-        if (proxyRecord && proxyRecord.active) {
-          proxy = {
-            host: proxyRecord.host,
-            port: proxyRecord.port,
-            username: proxyRecord.username || undefined,
-            password: proxyRecord.password || undefined,
-          };
-        }
-      }
-
-      // Import and run profileStartProcessor (dùng path alias @worker/*)
-      const profileStartProcessorPath = resolveWorkerPath('@worker/processors/profileStartProcessor');
-      const profileStartProcessor = (await import(profileStartProcessorPath)).default;
-      
-      console.log(`🔄 [START] Starting profile ${profileId} with workflow ${profile.workflowId}`);
-      
-      // Process in background (don't await to avoid blocking)
-      profileStartProcessor({
-        data: {
-          profileId: Number(profileId),
-          executablePath,
-          userDataDir,
-          proxy,
-          workflowId: Number(profile.workflowId),
-          vars: vars || {},
-        },
-      }).then((_result: any) => {
-        console.log(`✅ [START] Profile started successfully`);
-      }).catch((err: any) => {
-        console.error(`❌ [START] Failed to start profile:`, err?.message || err);
+    // Build fingerprint từ profileData
+    let fingerprint: any = profileData.fingerprintJson || profileData.fingerprint;
+    if (!fingerprint && (profileData.canvasMode || profileData.osName)) {
+      const { build: buildFingerprint } = await import('../services/fingerprintService');
+      fingerprint = buildFingerprint({
+        osName: profileData.osName as any,
+        osArch: (profileData.osArch as any) || 'x64',
+        browserVersion: profileData.browserVersion || 136,
+        screenWidth: profileData.screenWidth ?? 1920,
+        screenHeight: profileData.screenHeight ?? 1080,
+        canvasMode: (profileData.canvasMode || 'Noise') as 'Noise' | 'Off' | 'Block',
+        clientRectsMode: (profileData.clientRectsMode || 'Off') as 'Off' | 'Noise',
+        audioCtxMode: (profileData.audioCtxMode || 'Off') as 'Off' | 'Noise',
+        webglImageMode: (profileData.webglImageMode || 'Off') as 'Off' | 'Noise',
+        webglMetaMode: (profileData.webglMetaMode || 'Mask') as 'Mask' | 'Real',
+        geoEnabled: profileData.geoEnabled ?? false,
+        geoLatitude: (profileData as any).geoLatitude,
+        geoLongitude: (profileData as any).geoLongitude,
+        webrtcMainIP: profileData.webrtcMainIP ?? false,
+        proxyRefId: profileData.proxyRefId ?? null,
+        proxyManual: (profileData.proxyManual as any) ?? null,
+        ua: profileData.user_agent || profileData.userAgent || '',
+        mac: profileData.macAddress || '',
+        timezoneId: (profileData as any).timezoneId,
+        language: (profileData as any).language,
+        hardwareConcurrency: (profileData as any).hardwareConcurrency,
+        deviceMemory: (profileData as any).deviceMemory,
+        profileId: profileData.id,
+        seed: profileData.id,
       });
-
-      res.json({
-        success: true,
-        message: `Profile ${profileId} started with workflow ${profile.workflowId}. Browser should open shortly.`,
-      });
-    } else {
-      // 3. NẾU KHÔNG CÓ WORKFLOW, CHỈ KHỞI CHẠY SESSION BÌNH THƯỜNG
-      console.log('[START] Profile không có workflow nào được gán. Chỉ khởi chạy session bình thường.');
-      
-      const sessionService = await import('../services/sessionService');
-      const session = await sessionService.createSession({
-        profile_id: profileId,
-        proxy_id: proxyId,
-      });
-
-      res.json({
-        success: true,
-        message: 'Session started successfully! Browser should open now.',
-        data: session,
-      });
+    } else if (fingerprint && !fingerprint.seed) {
+      fingerprint = {
+        ...fingerprint,
+        profileId: profileData.id,
+        seed: fingerprint.seed || profileData.id,
+      };
     }
+
+    // GỌI runAndManageBrowser VỚI profileData TRỰC TIẾP
+    await browserService.runAndManageBrowser(
+      profileData, // ← TRUYỀN THẲNG profileData TỪ DB
+      profileData.workflow || null,
+      {
+        profileId: profileData.id,
+        sessionId: session.id,
+        userAgent: profileData.user_agent || profileData.userAgent || undefined,
+        fingerprint: fingerprint,
+        proxy: proxyConfig,
+      }
+    );
+
+    // Update session status to stopped
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { status: 'stopped', stopped_at: new Date() },
+    });
+
+    // Trả về thành công
+    res.json({
+      success: true,
+      message: 'Browser launched successfully.',
+      data: session,
+    });
   } catch (error: any) {
-    console.error(`[START] Lỗi nghiêm trọng khi chạy profile ${profileId}:`, error);
+    console.error(`[CONTROLLER] Lỗi từ browserService:`, error.message);
     throw new AppError(error.message || 'Failed to start profile', error.statusCode || 500);
   }
 });

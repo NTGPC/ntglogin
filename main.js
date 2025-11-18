@@ -1,13 +1,16 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
-const { ipcMain } = require('electron');
+const { ipcMain, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 chromium.use(stealth);
 
 // Import các hàm từ browser-manager.js
-const { launchAndFingerprint, executeWorkflowOnPage } = require('./browser-manager');
+const { launchAndFingerprint, executeWorkflowOnPage, setActiveBrowsersMap } = require('./browser-manager');
+
+// Truyền activeBrowsers Map vào browser-manager để nó có thể quản lý
+setActiveBrowsersMap(activeBrowsers);
 
 // Import Prisma Client (dynamic import để tương thích với CommonJS)
 let prisma = null;
@@ -28,7 +31,10 @@ async function getPrisma() {
 
 // Map để lưu các page object đang chạy theo profileId
 const runningPages = new Map();
-const runningBrowsers = new Map();
+// Map để quản lý tất cả các trình duyệt đang hoạt động
+const activeBrowsers = new Map();
+// Alias cho backward compatibility
+const runningBrowsers = activeBrowsers;
 
 async function loadProfileData(profileId) {
   const profilePath = path.join(__dirname, 'profiles', `profile${profileId}.json`);
@@ -171,192 +177,106 @@ ipcMain.on('launch-profile', (event, profileData) => {
 });
 
 // =======================================================================
-// === BẮT ĐẦU ĐOẠN CODE "MỘT PHÁT ĂN NGAY" ===
+// === BẮT ĐẦU ĐOẠN CODE "PHÁP Y" - THAY THẾ TOÀN BỘ HÀM CŨ ===
 // =======================================================================
 
-// HÀM "THÔNG DỊCH" WORKFLOW PHIÊN BẢN TỐI THƯỢNG
+// === PHIÊN BẢN NÂNG CẤP: executeWorkflow VỚI KHỐI GIÁM SÁT TÍCH HỢP ===
+
 async function executeWorkflow(page, workflow) {
-  // Kiểm tra workflow data - có thể nằm trong workflow.data (JSON) hoặc workflow.nodes/edges trực tiếp
-  let nodes, edges;
+  // -----------------------------------------------------------------
+  // --- BƯỚC 1: KHỐI GIÁM SÁT "PHÁP Y" ---
+  // Chúng ta sẽ mổ xẻ dữ liệu workflow ngay tại đây.
+  // -----------------------------------------------------------------
+  console.log('--- [FORENSIC ANALYSIS] BẮT ĐẦU GIÁM ĐỊNH WORKFLOW ---');
   
-  if (workflow.data && typeof workflow.data === 'object') {
-    // Workflow data được lưu trong trường 'data' (JSON)
-    nodes = workflow.data.nodes || [];
-    edges = workflow.data.edges || [];
-    console.log('[WORKFLOW ENGINE] Đã lấy workflow data từ trường "data"');
-  } else if (workflow.nodes && workflow.edges) {
-    // Workflow có nodes và edges trực tiếp
-    nodes = workflow.nodes;
-    edges = workflow.edges;
-    console.log('[WORKFLOW ENGINE] Đã lấy workflow data từ nodes/edges trực tiếp');
-  } else {
-    console.error('[WORKFLOW ENGINE] LỖI: Không tìm thấy nodes/edges trong workflow!');
+  if (!workflow || !workflow.nodes || !workflow.edges) {
+    console.error('[X] LỖI NGHIÊM TRỌNG: Dữ liệu workflow không hợp lệ hoặc không đầy đủ. Không có nodes/edges.');
+    return; // Dừng thực thi ngay lập tức
+  }
+  
+  console.log('1. Kiểu dữ liệu của workflow.nodes:', typeof workflow.nodes);
+  console.log('2. Kiểu dữ liệu của workflow.edges:', typeof workflow.edges);
+
+  let nodes;
+  let edges;
+
+  try {
+    // Xử lý trường hợp dữ liệu từ DB là chuỗi JSON
+    nodes = (typeof workflow.nodes === 'string') ? JSON.parse(workflow.nodes) : workflow.nodes;
+    edges = (typeof workflow.edges === 'string') ? JSON.parse(workflow.edges) : workflow.edges;
+    
+    console.log('3. Dữ liệu đã được parse thành công. Sẵn sàng thực thi.');
+
+  } catch (error) {
+    console.error('[X] LỖI PARSE JSON: Không thể phân tích dữ liệu workflow. Kiểm tra lại định dạng dữ liệu trong database.', error);
+    return; // Dừng thực thi
+  }
+  
+  console.log('--- [FORENSIC ANALYSIS] KẾT THÚC GIÁM ĐỊNH ---');
+  
+  // -----------------------------------------------------------------
+  // --- BƯỚC 2: BỘ NÃO THỰC THI (CODE CŨ CỦA ÔNG) ---
+  // Logic thực thi bây giờ sẽ sử dụng biến `nodes` và `edges` đã được làm sạch.
+  // -----------------------------------------------------------------
+  const nodeMap = new Map(nodes.map(node => [node.id, node]));
+  const edgeMap = new Map(edges.map(edge => [edge.source, edge.target]));
+  
+  let startNode = nodes.find(node => node.type.toLowerCase() === 'start');
+  if (!startNode) {
+    console.error('[X] Lỗi: Không tìm thấy Start Node trong workflow.');
     return;
   }
 
-  console.log('\n--- [WORKFLOW ENGINE V4 - ROBUST] BẮT ĐẦU THỰC THI ---');
-  console.log(`--- Tên workflow: "${workflow.name || 'Unknown'}" ---`);
-  console.log(`--- Số lượng nodes: ${nodes.length}, edges: ${edges.length} ---`);
-  
-  // 1. TÌM NODE START MỘT CÁCH AN TOÀN
-  let startNode = nodes.find(n => n.type === 'Start' || n.type === 'input' || n.type === 'startNode');
-  
-  if (!startNode) {
-    // Thử tìm node không có edge nào trỏ đến
-    const nodeIds = new Set(nodes.map(n => n.id));
-    const targetIds = new Set(edges.map(e => e.target));
-    const nodesWithNoIncoming = nodes.filter(n => !targetIds.has(n.id));
-    
-    if (nodesWithNoIncoming.length > 0) {
-      startNode = nodesWithNoIncoming[0];
-      console.log(`[WORKFLOW ENGINE] Sử dụng node không có edge trỏ đến làm Start: ${startNode.id}`);
-    } else {
-      console.error("--- LỖI: Không tìm thấy node 'Start'. Dừng thực thi. ---");
-      return;
-    }
-  }
-  
-  console.log(`[+] Đã tìm thấy node Start (ID: ${startNode.id}).`);
-
-  // 2. XÂY DỰNG "BẢN ĐỒ" KẾT NỐI ĐỂ ĐI CHO ĐÚNG ĐƯỜNG
-  const edgeMap = new Map();
-  edges.forEach(edge => {
-    edgeMap.set(edge.source, edge.target);
-  });
-  console.log('[+] Đã xây dựng bản đồ kết nối (edge map).');
-
   let currentNodeId = startNode.id;
-  
-  // Vòng lặp an toàn, sẽ chạy qua tất cả các node
-  for (let i = 0; i < nodes.length + 1; i++) {
-    const currentNode = nodes.find(n => n.id === currentNodeId);
+
+  while (currentNodeId) {
+    const currentNode = nodeMap.get(currentNodeId);
     if (!currentNode) {
-      console.error(`--- LỖI: Không tìm thấy node với ID: ${currentNodeId}. Dừng lại. ---`);
+      console.error(`[X] Lỗi: Không tìm thấy node với ID: ${currentNodeId}`);
       break;
     }
 
-    console.log(`\n[>>] Đang ở node: [${currentNode.type}] (ID: ${currentNode.id})`);
+    console.log(`[>>] Đang thực thi Node: ${currentNode.id} | Type: ${currentNode.type}`);
 
-    // 3. BỎ QUA HÀNH ĐỘNG CỦA NODE START, CHỈ THỰC THI CÁC NODE SAU
-    if (currentNode.type !== 'Start' && currentNode.type !== 'input' && currentNode.type !== 'startNode') {
-      // "GIẢI NÉN" DỮ LIỆU CỦA NODE (CỰC KỲ QUAN TRỌNG)
-      let nodeData = currentNode.data;
-      if (typeof nodeData === 'string') {
-        try {
-          nodeData = JSON.parse(nodeData);
-          console.log('   [i] Dữ liệu node đã được giải nén từ chuỗi JSON.');
-        } catch (e) {
-          console.error(`   --- LỖI: Dữ liệu của node ${currentNode.id} không phải JSON hợp lệ. Bỏ qua node này. ---`);
-          const nextNodeId = edgeMap.get(currentNodeId);
-          if (!nextNodeId) { 
-            console.log('[+] Hết đường đi sau khi gặp lỗi.'); 
-            break; 
+    try {
+      switch (currentNode.type.toLowerCase()) {
+        case 'start':
+          // Start node không làm gì cả, chỉ là điểm bắt đầu
+          break;
+
+        case 'open page':
+          const url = currentNode.data?.url;
+          if (url) {
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            console.log(`[✔] Đã mở trang: ${url}`);
+          } else {
+            console.warn(`[!] CẢNH BÁO: Node "Open Page" không tìm thấy thuộc tính "url".`);
           }
-          currentNodeId = nextNodeId;
-          continue; // Chuyển sang node tiếp theo
-        }
+          break;
+        
+        // Thêm các case khác ở đây, cũng dùng toLowerCase()
+        default:
+          console.warn(`[!] Chưa hỗ trợ node type: ${currentNode.type}`);
+          break;
       }
-
-      // 4. THỰC THI HÀNH ĐỘNG
-      try {
-        switch (currentNode.type) {
-          case 'Open Page':
-          case 'openUrlNode':
-          case 'open-url':
-            if (nodeData && nodeData.url) {
-              console.log(`   [*] Đang điều hướng đến: ${nodeData.url}`);
-              await page.goto(nodeData.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-              console.log(`   [✔] ĐÃ ĐẾN TRANG: ${nodeData.url}`);
-            } else {
-              console.warn(`   [!] CẢNH BÁO: Node "Open Page" không có URL.`);
-            }
-            break;
-
-          case 'Click':
-          case 'clickNode':
-          case 'click':
-            if (nodeData && nodeData.selector) {
-              console.log(`   [*] Đang click vào selector: ${nodeData.selector}`);
-              await page.waitForSelector(nodeData.selector, { timeout: 30000 });
-              await page.click(nodeData.selector);
-              console.log(`   [✔] ĐÃ CLICK vào: ${nodeData.selector}`);
-            } else {
-              console.warn(`   [!] CẢNH BÁO: Node "Click" không có selector.`);
-            }
-            break;
-
-          case 'Type':
-          case 'typeNode':
-          case 'type':
-          case 'fill':
-            if (nodeData && nodeData.selector && nodeData.text) {
-              console.log(`   [*] Đang nhập "${nodeData.text}" vào selector: ${nodeData.selector}`);
-              await page.waitForSelector(nodeData.selector, { timeout: 30000 });
-              await page.fill(nodeData.selector, nodeData.text);
-              console.log(`   [✔] ĐÃ NHẬP vào: ${nodeData.selector}`);
-            } else {
-              console.warn(`   [!] CẢNH BÁO: Node "Type" không đủ thông tin.`);
-            }
-            break;
-
-          case 'Wait':
-          case 'waitNode':
-          case 'wait':
-            const milliseconds = nodeData?.milliseconds || nodeData?.time || nodeData?.value || 1000;
-            console.log(`   [*] Đang chờ ${milliseconds}ms`);
-            await page.waitForTimeout(Number(milliseconds));
-            console.log(`   [✔] ĐÃ CHỜ XONG`);
-            break;
-
-          case 'screenshot':
-            const screenshotPath = nodeData?.path || nodeData?.value || `screenshot_${Date.now()}.png`;
-            console.log(`   [*] Đang chụp screenshot: ${screenshotPath}`);
-            await page.screenshot({ path: screenshotPath });
-            console.log(`   [✔] ĐÃ CHỤP SCREENSHOT: ${screenshotPath}`);
-            break;
-
-          case 'evaluate':
-            const script = nodeData?.script || nodeData?.value || '';
-            if (script) {
-              console.log(`   [*] Đang thực thi script`);
-              const result = await page.evaluate(script);
-              console.log(`   [✔] ĐÃ THỰC THI SCRIPT, kết quả:`, result);
-            } else {
-              console.warn(`   [!] CẢNH BÁO: Node "Evaluate" không có script.`);
-            }
-            break;
-
-          default:
-            console.warn(`   [!] Không biết cách xử lý node type: ${currentNode.type}`);
-            break;
-        }
-      } catch (execError) {
-        console.error(`--- LỖI KHI THỰC THI NODE ${currentNode.id}:`, execError.message);
-        break; 
-      }
-    }
-    
-    // 5. NẾU LÀ NODE END, KẾT THÚC
-    if (currentNode.type === 'End' || currentNode.type === 'output' || currentNode.type === 'endNode') {
-      console.log('[+] Gặp node End. Workflow hoàn thành.');
+    } catch (execError) {
+      console.error(`[X] LỖI KHI THỰC THI NODE ${currentNode.id}:`, execError.message);
       break;
     }
-    
-    // 6. TÌM ĐƯỜNG ĐI TIẾP THEO
+
+    // Tìm đường đi tiếp theo
     const nextNodeId = edgeMap.get(currentNodeId);
     if (!nextNodeId) {
-      console.log('[+] Không tìm thấy đường đi tiếp theo. Workflow kết thúc.');
+      console.log('[**] Không còn đường đi tiếp theo. Workflow kết thúc.');
       break;
     }
     
-    currentNodeId = nextNodeId; // Cập nhật để vòng lặp tiếp tục
+    currentNodeId = nextNodeId;
   }
-  
-  console.log('--- [WORKFLOW ENGINE] KẾT THÚC THỰC THI ---');
 }
 
 // =======================================================================
-// === KẾT THÚC ĐOẠN CODE THAY THẾ ===
+// === KẾT THÚC ĐOẠN CODE "PHÁP Y" ===
 // =======================================================================
 
 // LISTENER CHÍNH, ĐIỀU PHỐI MỌI THỨ
@@ -370,17 +290,21 @@ ipcMain.on('start-profile-and-run-workflow', async (event, profileId) => {
     const prismaClient = await getPrisma();
     
     console.log('[MAIN] Đang truy vấn database...');
+    console.log(`--- [DATA PIPELINE CHECK] Bắt đầu lấy dữ liệu cho Profile ID: ${profileId} ---`);
+    
     const profile = await prismaClient.profile.findUnique({
       where: { id: Number(profileId) },
       include: {
-        workflow: {
-          // Workflow data được lưu trong trường 'data' (JSON)
-        }
-      }
+        workflow: true, // Đảm bảo rằng ông có dòng include này!
+      },
     });
 
+    // === BẮT ĐẦU KHỐI GIÁM SÁT MỚI ===
+    console.log('--- [DATA PIPELINE CHECK] Dữ liệu lấy từ DB: ---');
+    console.log(profile); // In ra toàn bộ object profile
+    
     if (!profile) {
-      console.error(`[MAIN-ERROR] Không tìm thấy profile ${profileId}.`);
+      console.error(`[X] LỖI CỐT LÕI: Không tìm thấy profile với ID ${profileId} trong DB.`);
       if (event && event.sender && !event.sender.isDestroyed()) {
         event.sender.send('execution-error', { 
           profileId, 
@@ -389,6 +313,21 @@ ipcMain.on('start-profile-and-run-workflow', async (event, profileId) => {
       }
       return;
     }
+
+    if (!profile.workflow) {
+      console.error(`[X] LỖI CỐT LÕI: Profile này KHÔNG CÓ workflow nào được gán trong DB! (Giá trị là: ${profile.workflow})`);
+      // Ở đây có thể báo lỗi về cho UI
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('execution-error', { 
+          profileId, 
+          message: `Profile ${profileId} không có workflow được gán` 
+        });
+      }
+      return;
+    }
+
+    console.log('[✔] Dữ liệu hợp lệ. Bắt đầu chuyển cho executeWorkflow...');
+    // === KẾT THÚC KHỐI GIÁM SÁT ===
 
     // --- ĐÂY LÀ DÒNG QUAN TRỌNG NHẤT ---
     // NÓ SẼ IN RA TOÀN BỘ CẤU TRÚC DỮ LIỆU MÀ CHÚNG TA NHẬN ĐƯỢC
@@ -404,56 +343,28 @@ ipcMain.on('start-profile-and-run-workflow', async (event, profileId) => {
       console.log('[DATA DUMP] ========================================\n');
     }
 
-    // 2. KHỞI CHẠY TRÌNH DUYỆT
-    console.log('[EXEC] Đang khởi chạy trình duyệt...');
-    const { browser, page } = await launchAndFingerprint(profile);
-    console.log('[EXEC] ✅ Trình duyệt đã khởi chạy thành công.\n');
-
-    // Lưu page và browser vào Map
-    runningPages.set(Number(profileId), page);
-    runningBrowsers.set(Number(profileId), browser);
-    console.log(`[EXEC] Đã lưu page và browser cho profile ${profileId}\n`);
-
-    // 3. KIỂM TRA VÀ THỰC THI WORKFLOW
-    if (profile.workflow && profile.workflow.data) {
-      const workflowData = profile.workflow.data;
-      
-      // Kiểm tra cấu trúc workflow data
-      console.log('[EXEC] ========================================');
-      console.log(`[EXEC] Tìm thấy workflow "${profile.workflow.name}".`);
-      console.log(`[EXEC] Workflow ID: ${profile.workflow.id}`);
-      console.log(`[EXEC] Workflow data type:`, typeof workflowData);
-      console.log(`[EXEC] Workflow data keys:`, Object.keys(workflowData || {}));
-      
-      // Kiểm tra nodes và edges
-      if (workflowData.nodes) {
-        console.log(`[EXEC] Số lượng nodes: ${workflowData.nodes.length}`);
-        console.log(`[EXEC] Node types:`, workflowData.nodes.map(n => n.type).join(', '));
-      } else {
-        console.warn(`[EXEC] ⚠️ Workflow data không có 'nodes'!`);
+    // 2. PHÒNG THỦ TRƯỚC KHI TẤN CÔNG - Kiểm tra xem profile đã chạy chưa
+    const profileIdNum = Number(profileId);
+    if (activeBrowsers.has(profileIdNum)) {
+      console.warn(`[!] Profile ${profileId} đã đang chạy. Vui lòng đóng phiên cũ trước.`);
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('execution-error', { 
+          profileId, 
+          message: `Profile ${profileId} đã đang chạy. Vui lòng đóng phiên cũ trước.` 
+        });
       }
-      
-      if (workflowData.edges) {
-        console.log(`[EXEC] Số lượng edges: ${workflowData.edges.length}`);
-      } else {
-        console.warn(`[EXEC] ⚠️ Workflow data không có 'edges'!`);
-      }
-      
-      console.log('[EXEC] ========================================\n');
-      console.log('[EXEC] Chuẩn bị thực thi workflow...\n');
-
-      // Gọi hàm executeWorkflow mới
-      await executeWorkflow(page, profile.workflow);
-      
-      console.log(`\n[EXEC] ✅ Đã thực thi xong workflow "${profile.workflow.name}".`);
-    } else {
-      console.log('[EXEC] ⚠️ Profile không có workflow nào được gán hoặc workflow rỗng.');
-      console.log(`[EXEC] Workflow ID: ${profile.workflowId || 'null'}`);
-      console.log(`[EXEC] Workflow object:`, profile.workflow ? 'exists' : 'null');
-      if (profile.workflow) {
-        console.log(`[EXEC] Workflow data:`, profile.workflow.data ? 'exists' : 'null');
-      }
+      return;
     }
+
+    // 3. KHỞI CHẠY TRÌNH DUYỆT VÀ THỰC THI WORKFLOW
+    console.log('[EXEC] Đang khởi chạy trình duyệt...');
+    console.log('[EXEC] Đang chờ trình duyệt đóng...');
+    
+    // Hàm launchAndFingerprint bây giờ sẽ tự động thực thi workflow và đợi trình duyệt đóng
+    // Truyền profileId để lưu vào Map
+    await launchAndFingerprint(profile, profileIdNum);
+    
+    console.log('[EXEC] ✅ Trình duyệt đã được đóng. Tiến trình hoàn tất.');
 
     console.log(`\n[EXEC] =================================`);
     console.log(`[EXEC] Hoàn thành tiến trình cho profile ${profileId}`);
@@ -835,6 +746,98 @@ ipcMain.handle('run-automation', async (event, { profileId, workflowData }) => {
       error: error.stack
     };
   }
+});
+
+// =======================================================================
+// === KHỐI MÃ NGUỒN ĐIỀU KHIỂN TỰ ĐỘNG HÓA --- DÁN VÀO MAIN.JS ===
+// =======================================================================
+
+// HÀM "CẤP TRÊN" - CHỊU TRÁCH NHIỆM LẤY DỮ LIỆU VÀ KHỞI CHẠY
+async function launchProfileAndRunWorkflow(profileId) {
+  console.log(`--- [DATA PIPELINE CHECK] Bắt đầu lấy dữ liệu cho Profile ID: ${profileId} ---`);
+
+  const prismaClient = await getPrisma();
+  const profileFromDb = await prismaClient.profile.findUnique({
+    where: { id: Number(profileId) },
+    include: {
+      workflow: true, // Lấy cả dữ liệu workflow liên quan
+    },
+  });
+
+  console.log('--- [DATA PIPELINE CHECK] Dữ liệu gốc trả về từ DB: ---');
+  console.log(JSON.stringify(profileFromDb, null, 2)); // In ra dạng JSON đẹp để dễ đọc
+
+  if (!profileFromDb) {
+    console.error(`[X] LỖI CỐT LÕI: Không tìm thấy profile với ID ${profileId} trong DB.`);
+    return;
+  }
+
+  if (!profileFromDb.workflow) {
+    console.error(`[X] LỖI CỐT LÕI: Profile này KHÔNG CÓ workflow nào được gán trong DB!`);
+    return;
+  }
+
+  console.log('[✔] Dữ liệu hợp lệ. Bắt đầu khởi chạy trình duyệt và thực thi workflow...');
+  
+  try {
+    // PHÒNG THỦ TRƯỚC KHI TẤN CÔNG - Kiểm tra xem profile đã chạy chưa
+    const profileIdNum = Number(profileId);
+    if (activeBrowsers.has(profileIdNum)) {
+      console.warn(`[!] Profile ${profileId} đã đang chạy. Vui lòng đóng phiên cũ trước.`);
+      return;
+    }
+
+    console.log('[Main] Đang chờ trình duyệt đóng...');
+    // Hàm launchAndFingerprint bây giờ sẽ tự động thực thi workflow và đợi trình duyệt đóng
+    // Truyền profileId để lưu vào Map
+    await launchAndFingerprint(profileFromDb, profileIdNum);
+    console.log('[Main] Tiến trình đã hoàn tất.');
+  } catch (error) {
+    console.error(`[X] Lỗi nghiêm trọng trong quá trình khởi chạy hoặc thực thi:`, error);
+  }
+}
+
+// LƯU Ý: Hàm ipcMain.on('start-profile-and-run-workflow', ...) đã được implement ở trên
+// (dòng 277). Khối mã này là phiên bản tham khảo/alternative implementation.
+
+// =======================================================================
+// === KẾT THÚC KHỐI MÃ NGUỒN ===
+// =======================================================================
+
+// =======================================================================
+// === DỌN DẸP KHI THOÁT - ĐÓNG TẤT CẢ TRÌNH DUYỆT ===
+// =======================================================================
+
+// Đảm bảo rằng khi ứng dụng Electron thoát, tất cả trình duyệt con cũng được đóng
+app.on('will-quit', async (event) => {
+  // Ngăn ứng dụng thoát ngay lập tức
+  event.preventDefault();
+  
+  console.log('[App] Đang đóng tất cả các trình duyệt đang hoạt động...');
+  
+  const closingPromises = [];
+  for (const [profileId, browser] of activeBrowsers.entries()) {
+    console.log(`[App] Đang đóng trình duyệt cho profile ${profileId}...`);
+    try {
+      closingPromises.push(browser.close());
+    } catch (error) {
+      console.error(`[App] Lỗi khi đóng trình duyệt cho profile ${profileId}:`, error);
+    }
+  }
+  
+  // Đợi tất cả các trình duyệt đóng xong
+  if (closingPromises.length > 0) {
+    await Promise.all(closingPromises);
+  }
+  
+  console.log('[App] Tất cả trình duyệt đã được đóng. Ứng dụng sẽ thoát.');
+  
+  // Xóa tất cả entries trong Map
+  activeBrowsers.clear();
+  runningPages.clear();
+  
+  // Cho phép ứng dụng thoát
+  app.exit();
 });
 
 module.exports = { launchProfileWithFullEmulation, sortNodes };

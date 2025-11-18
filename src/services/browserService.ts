@@ -12,11 +12,12 @@ chromium.use(StealthPlugin());
 console.log('[BrowserService] ✅ Playwright-Extra với Stealth Plugin đã được kích hoạt!');
 
 // Path to fingerprint patch script (for Playwright)
-const fingerprintPatchPath = path.join(__dirname, '../inject/fingerprintPatch.js');
+// Sử dụng process.cwd() để lấy project root, đảm bảo đường dẫn đúng dù code được compile
+const fingerprintPatchPath = path.join(process.cwd(), 'src', 'inject', 'fingerprintPatch.js');
 // Path to audio spoof script (for Playwright)
-const audioSpoofPath = path.join(__dirname, '../inject/audioSpoof.js');
+const audioSpoofPath = path.join(process.cwd(), 'src', 'inject', 'audioSpoof.js');
 // Path to deep injection script template (for Playwright)
-const injectionScriptTemplatePath = path.join(__dirname, '../../core/injection_script.js');
+const injectionScriptTemplatePath = path.join(process.cwd(), 'core', 'injection_script.js');
 
 // Load script contents (for Puppeteer)
 const fingerprintPatchScript = fs.readFileSync(fingerprintPatchPath, 'utf-8');
@@ -727,8 +728,23 @@ interface BrowserLaunchOptions {
   };
 }
 
-export async function launchBrowser(options: BrowserLaunchOptions): Promise<any> {
-  const { profileId, sessionId, userAgent, fingerprint, proxy } = options;
+export async function launchBrowser(options: BrowserLaunchOptions & { profile?: any }): Promise<any> {
+  const { profileId, sessionId, userAgent: userAgentFromOptions, fingerprint, proxy, profile } = options;
+  
+  // === VŨ KHÍ #1: USER AGENT HIỆN ĐẠI - LẤY TỪ PROFILE TRONG DB ===
+  // User agent cũ (Chrome 17) là một lá cờ đỏ khổng lồ.
+  // Hãy dùng một user agent của năm 2023-2024 (Chrome 118+).
+  const defaultModernUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36';
+  
+  // === LOGIC ĐÚNG: ƯU TIÊN LẤY TỪ PROFILE TRONG DB ===
+  // Ưu tiên: profile.userAgent/user_agent (từ DB) > userAgent từ options > fingerprint > mặc định hiện đại
+  const userAgent = profile?.userAgent || 
+                    profile?.user_agent || 
+                    userAgentFromOptions || 
+                    fingerprint?.userAgent || 
+                    fingerprint?.user_agent || 
+                    fingerprint?.ua || 
+                    defaultModernUserAgent;
 
   // Use persistent user-data-dir per profile so cookies/history/logins are preserved across sessions
   // Note: launching multiple sessions for the same profile concurrently can corrupt data; avoid parallel runs
@@ -793,221 +809,258 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
     // Ignore
   }
 
-  // If proxy is provided, use Playwright persistent context (native proxy support/auth)
+  // === NÂNG CẤP VŨ KHÍ: LUÔN DÙNG launchPersistentContext ĐỂ TRÁNH BỊ PHÁT HIỆN ===
+  // Đảm bảo thư mục profile tồn tại
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true });
+  }
+
+  // Close any existing instance for this session
+  try {
+    const existing = browserInstances.get(sessionId);
+    if (existing) {
+      await existing.close().catch(() => {});
+      browserInstances.delete(sessionId);
+    }
+  } catch {}
+
+  // Build context options cho launchPersistentContext
+  const contextOptions: any = {
+    headless: false,
+    args: [
+      // Các tham số để ẩn dấu hiệu tự động hóa và chống phát hiện bot
+      '--disable-blink-features=AutomationControlled',
+      '--disable-infobars', // Tắt thanh thông báo "Chrome is being controlled..."
+      '--disable-dev-shm-usage',
+      '--no-sandbox', // Thường cần thiết trong một số môi trường
+      '--disable-setuid-sandbox',
+      '--disable-notifications',
+      '--disable-popup-blocking',
+      '--restore-last-session', // Khôi phục session trước đó để trông tự nhiên hơn
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+      '--disable-webgpu',
+      '--disable-features=WebRtcHideLocalIpsWithMdns',
+      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--autoplay-policy=no-user-gesture-required',
+    ],
+    // Bỏ qua các default args tự động hóa
+    ignoreDefaultArgs: ['--enable-automation'],
+  };
+
+  // Thêm proxy nếu có
   if (proxy) {
-    // Close any existing instance for this session
-    try {
-      const existing = browserInstances.get(sessionId);
-      if (existing) {
-        await existing.close().catch(() => {});
-        browserInstances.delete(sessionId);
-      }
-    } catch {}
-
     const server = `${proxy.type}://${proxy.host}:${proxy.port}`;
-    const contextOptions: any = {
-      headless: false,
-      proxy: {
-        server,
-        username: proxy.username || undefined,
-        password: proxy.password || undefined,
-      },
-      args: [
-        // Các tham số để ẩn dấu hiệu tự động hóa
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--disable-dev-shm-usage',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-notifications',
-        '--disable-popup-blocking',
-        '--restore-last-session',
-        '--use-fake-device-for-media-stream',
-        '--use-fake-ui-for-media-stream',
-        '--disable-webgpu',
-        '--disable-features=WebRtcHideLocalIpsWithMdns',
-        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--autoplay-policy=no-user-gesture-required',
-      ],
-      // Bỏ qua các default args tự động hóa
-      ignoreDefaultArgs: ['--enable-automation'],
+    contextOptions.proxy = {
+      server,
+      username: proxy.username || undefined,
+      password: proxy.password || undefined,
     };
-    
-    // QUAN TRỌNG: KHÔNG set userAgent trong contextOptions để tránh xung đột với CDP Emulation
-    // CDP Emulation.setUserAgentOverride sẽ xử lý User-Agent ở cấp engine tốt hơn
-    if (fingerprint && fingerprint.viewport) {
-      contextOptions.viewport = {
-        width: fingerprint.viewport.width || 1280,
-        height: fingerprint.viewport.height || 720,
-      };
+  }
+  
+  // === VŨ KHÍ #2: VIEWPORT TIÊU CHUẨN - LẤY TỪ PROFILE TRONG DB ===
+  // Giả lập một màn hình desktop Full HD thông thường (1920x1080) thay vì 1280x720 cũ
+  // === LOGIC ĐÚNG: ƯU TIÊN LẤY TỪ PROFILE TRONG DB ===
+  const screenWidth = profile?.screenWidth || fingerprint?.viewport?.width || fingerprint?.screenWidth || 1920;
+  const screenHeight = profile?.screenHeight || fingerprint?.viewport?.height || fingerprint?.screenHeight || 1080;
+  
+  contextOptions.viewport = {
+    width: screenWidth,
+    height: screenHeight,
+  };
+  
+  // WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader)
+  const useSwiftShader = fingerprint?.webgl?.useSwiftShader || fingerprint?.webglImageMode === 'swiftshader';
+  if (useSwiftShader) {
+    contextOptions.args.push('--use-gl=swiftshader');          // ép WebGL dùng SwiftShader
+    contextOptions.args.push('--use-angle=swiftshader');       // ANGLE -> swiftshader
+    contextOptions.args.push('--disable-software-rasterizer=false');
+  }
+
+  // === NÂNG CẤP VŨ KHÍ: LUÔN DÙNG launchPersistentContext ĐỂ TRÁNH BỊ PHÁT HIỆN ===
+  try {
+    console.log(`[Browser ${sessionId}] ✅ Khởi chạy với STEALTH MODE - Playwright-Extra + Stealth Plugin + Persistent Context`);
+    console.log(`[Browser ${sessionId}] ✅ Sử dụng profile thật: ${profileDir}`);
+    const context = await chromium.launchPersistentContext(profileDir, contextOptions);
+    browserInstances.set(sessionId, context);
+
+    // Ensure at least one page exists and is frontmost
+    const pages = context.pages();
+    let page: Page | undefined = pages[0];
+    if (!page) page = await context.newPage();
+    try { await page.bringToFront(); } catch {}
+
+    // --- BƯỚC 2: ĐÂY LÀ PHẦN "MA THUẬT" CDP EMULATION ---
+    // Tạo một phiên kết nối trực tiếp đến Chrome DevTools Protocol
+    // Ra lệnh cho trình duyệt ghi đè User-Agent ở cấp độ nhân (engine-level)
+    // BƯỚC QUAN TRỌNG NHẤT: DÙNG LỆNH GIẢ LẬP
+    // Lệnh này sẽ ghi đè User-Agent (HTTP), User-Agent (JS), Platform (JS)
+    // và các Client Hint (Sec-CH-UA) liên quan một cách nhất quán.
+    // === VŨ KHÍ #1: USER AGENT HIỆN ĐẠI - ÁP DỤNG QUA CDP ===
+    // Luôn áp dụng user-agent (có thể là mặc định hiện đại hoặc từ profile)
+    if (userAgent) {
+      try {
+        const client = await context.newCDPSession(page);
+        
+        // Extract Chrome version từ userAgent string (ví dụ: "Chrome/120.0.0.0" -> "120")
+        const chromeVersionMatch = userAgent.match(/Chrome\/(\d+)/);
+        const chromeMajorVersion = chromeVersionMatch ? chromeVersionMatch[1] : '120';
+        const chromeFullVersion = chromeVersionMatch ? `${chromeMajorVersion}.0.6099.71` : '120.0.6099.71';
+        
+        // Determine platform string
+        const platform = fingerprint?.platform || 
+          (fingerprint?.os === 'Windows' ? 'Win32' : 
+           fingerprint?.os === 'Mac OS' ? 'MacIntel' : 
+           'Linux x86_64');
+        
+        // Determine OS name for userAgentMetadata
+        const osName = platform === 'Win32' ? 'Windows' : 
+                      platform === 'MacIntel' ? 'macOS' : 
+                      'Linux';
+        
+        await client.send('Emulation.setUserAgentOverride', {
+          userAgent: userAgent,
+          platform: platform, // <-- Ghi đè platform ở đây luôn
+          
+          // Các User-Agent Client Hint để trông giống thật hơn
+          userAgentMetadata: {
+            brands: [
+              { brand: 'Not_A Brand', version: '8' },
+              { brand: 'Chromium', version: chromeMajorVersion },
+              { brand: 'Google Chrome', version: chromeMajorVersion }
+            ],
+            fullVersion: chromeFullVersion,
+            platform: osName,
+            platformVersion: osName === 'Windows' ? '10.0.0' : osName === 'macOS' ? '13.0.0' : '5.15.0',
+            architecture: 'x86',
+            model: '',
+            mobile: false
+          }
+        });
+        
+        console.log(`[Browser ${sessionId}] ✅ CDP Emulation.setUserAgentOverride applied: ${userAgent.substring(0, 80)}...`);
+        console.log(`[Browser ${sessionId}] ✅ Platform: ${platform}, Chrome Version: ${chromeMajorVersion}`);
+        if (userAgent === defaultModernUserAgent) {
+          console.log(`[Browser ${sessionId}] ℹ️ Đang sử dụng User-Agent mặc định hiện đại (Chrome 118)`);
+        }
+      } catch (cdpError) {
+        console.warn(`[Browser ${sessionId}] ⚠️ Failed to apply CDP Emulation.setUserAgentOverride:`, cdpError);
+      }
     } else {
-      contextOptions.viewport = { width: 1280, height: 720 };
-    }
-    
-    // WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader)
-    const useSwiftShader = fingerprint?.webgl?.useSwiftShader || fingerprint?.webglImageMode === 'swiftshader';
-    if (useSwiftShader) {
-      contextOptions.args.push('--use-gl=swiftshader');          // ép WebGL dùng SwiftShader
-      contextOptions.args.push('--use-angle=swiftshader');       // ANGLE -> swiftshader
-      contextOptions.args.push('--disable-software-rasterizer=false');
-      // Optional: contextOptions.args.push('--gpu-rasterization-msaa-sample-count=0');
-    }
-
-    try {
-      console.log(`[Browser ${sessionId}] ✅ Khởi chạy với STEALTH MODE - Playwright-Extra + Stealth Plugin`);
-      const context = await chromium.launchPersistentContext(profileDir, contextOptions);
-      browserInstances.set(sessionId, context);
-
-      // Ensure at least one page exists and is frontmost
-      const pages = context.pages();
-      let page: Page | undefined = pages[0];
-      if (!page) page = await context.newPage();
-      try { await page.bringToFront(); } catch {}
-
-      // --- BƯỚC 2: ĐÂY LÀ PHẦN "MA THUẬT" CDP EMULATION ---
-      // Tạo một phiên kết nối trực tiếp đến Chrome DevTools Protocol
-      // Ra lệnh cho trình duyệt ghi đè User-Agent ở cấp độ nhân (engine-level)
-      // BƯỚC QUAN TRỌNG NHẤT: DÙNG LỆNH GIẢ LẬP
-      // Lệnh này sẽ ghi đè User-Agent (HTTP), User-Agent (JS), Platform (JS)
-      // và các Client Hint (Sec-CH-UA) liên quan một cách nhất quán.
-      if (userAgent) {
-        try {
-          const client = await context.newCDPSession(page);
-          
-          // Extract Chrome version từ userAgent string (ví dụ: "Chrome/120.0.0.0" -> "120")
-          const chromeVersionMatch = userAgent.match(/Chrome\/(\d+)/);
-          const chromeMajorVersion = chromeVersionMatch ? chromeVersionMatch[1] : '120';
-          const chromeFullVersion = chromeVersionMatch ? `${chromeMajorVersion}.0.6099.71` : '120.0.6099.71';
-          
-          // Determine platform string
-          const platform = fingerprint?.platform || 
-            (fingerprint?.os === 'Windows' ? 'Win32' : 
-             fingerprint?.os === 'Mac OS' ? 'MacIntel' : 
-             'Linux x86_64');
-          
-          // Determine OS name for userAgentMetadata
-          const osName = platform === 'Win32' ? 'Windows' : 
-                        platform === 'MacIntel' ? 'macOS' : 
-                        'Linux';
-          
-          await client.send('Emulation.setUserAgentOverride', {
-            userAgent: userAgent,
-            platform: platform, // <-- Ghi đè platform ở đây luôn
-            
-            // Các User-Agent Client Hint để trông giống thật hơn
-            userAgentMetadata: {
-              brands: [
-                { brand: 'Not_A Brand', version: '8' },
-                { brand: 'Chromium', version: chromeMajorVersion },
-                { brand: 'Google Chrome', version: chromeMajorVersion }
-              ],
-              fullVersion: chromeFullVersion,
-              platform: osName,
-              platformVersion: osName === 'Windows' ? '10.0.0' : osName === 'macOS' ? '13.0.0' : '5.15.0',
-              architecture: 'x86',
-              model: '',
-              mobile: false
-            }
-          });
-          
-          console.log(`[Browser ${sessionId}] ✅ CDP Emulation.setUserAgentOverride applied: ${userAgent.substring(0, 80)}...`);
-          console.log(`[Browser ${sessionId}] ✅ Platform: ${platform}, Chrome Version: ${chromeMajorVersion}`);
-        } catch (cdpError) {
-          console.warn(`[Browser ${sessionId}] ⚠️ Failed to apply CDP Emulation.setUserAgentOverride:`, cdpError);
-        }
-      } else {
-        console.warn(`[Browser ${sessionId}] ⚠️ Không có User-Agent được cung cấp, có thể bị rò rỉ thông tin!`);
+      // Fallback: Nếu vẫn không có userAgent, dùng mặc định hiện đại
+      console.warn(`[Browser ${sessionId}] ⚠️ Không có User-Agent được cung cấp, sử dụng mặc định hiện đại...`);
+      try {
+        const client = await context.newCDPSession(page);
+        await client.send('Emulation.setUserAgentOverride', {
+          userAgent: defaultModernUserAgent,
+          platform: 'Win32',
+          userAgentMetadata: {
+            brands: [
+              { brand: 'Not_A Brand', version: '8' },
+              { brand: 'Chromium', version: '118' },
+              { brand: 'Google Chrome', version: '118' }
+            ],
+            fullVersion: '118.0.0.0',
+            platform: 'Windows',
+            platformVersion: '10.0.0',
+            architecture: 'x86',
+            model: '',
+            mobile: false
+          }
+        });
+        console.log(`[Browser ${sessionId}] ✅ Đã áp dụng User-Agent mặc định hiện đại (Chrome 118)`);
+      } catch (fallbackError) {
+        console.error(`[Browser ${sessionId}] ❌ Không thể áp dụng User-Agent mặc định:`, fallbackError);
       }
-      // --- KẾT THÚC PHẦN "MA THUẬT" CDP EMULATION ---
+    }
+    // --- KẾT THÚC PHẦN "MA THUẬT" CDP EMULATION ---
 
-      // Remove about:blank if session tabs are restored
-      setTimeout(async () => {
-        try {
-          const all = context.pages();
-          if (all.length > 1) {
-            for (const p of all) {
-              const url = p.url();
-              if (url === 'about:blank') {
-                try { await p.close(); } catch {}
-              }
+    // Remove about:blank if session tabs are restored
+    setTimeout(async () => {
+      try {
+        const all = context.pages();
+        if (all.length > 1) {
+          for (const p of all) {
+            const url = p.url();
+            if (url === 'about:blank') {
+              try { await p.close(); } catch {}
             }
           }
-        } catch {}
-      }, 1200);
+        }
+      } catch {}
+    }, 1200);
 
-      // Inject fingerprint for Playwright context
-      if (fingerprint) {
-        try {
-          const normalizedFp: any = {
-            ...fingerprint,
-            profileId: profileId,
-            userAgent: fingerprint.userAgent || fingerprint.user_agent || fingerprint.ua || userAgent || null,
-            ua: fingerprint.ua || fingerprint.userAgent || fingerprint.user_agent || userAgent || null,
-            os: fingerprint.os || fingerprint.osName || null,
-            osName: fingerprint.osName || fingerprint.os || null,
+    // Inject fingerprint for Playwright context
+    if (fingerprint) {
+      try {
+        const normalizedFp: any = {
+          ...fingerprint,
+          profileId: profileId,
+          userAgent: fingerprint.userAgent || fingerprint.user_agent || fingerprint.ua || userAgent || null,
+          ua: fingerprint.ua || fingerprint.userAgent || fingerprint.user_agent || userAgent || null,
+          os: fingerprint.os || fingerprint.osName || null,
+          osName: fingerprint.osName || fingerprint.os || null,
+          platform: fingerprint.platform || null,
+          navigator: {
             platform: fingerprint.platform || null,
-            navigator: {
-              platform: fingerprint.platform || null,
-              hardwareConcurrency: fingerprint.hwc || fingerprint.hardware?.cores || null,
-              deviceMemory: fingerprint.dmem || fingerprint.hardware?.memoryGb || null,
-              languages: fingerprint.languages || null,
-              language: fingerprint.language || null
-            },
-            screen: fingerprint.screen || {
-              width: fingerprint.viewport?.width || 1920,
-              height: fingerprint.viewport?.height || 1080,
-              availWidth: fingerprint.viewport?.width || 1920,
-              availHeight: (fingerprint.viewport?.height || 1080) - 40,
-              colorDepth: 24,
-              pixelDepth: 24,
-              devicePixelRatio: fingerprint.viewport?.deviceScaleFactor || 1
-            },
-            webgl: fingerprint.webgl || {
-              vendor: null,
-              renderer: null,
-              imageMode: fingerprint.webglImageMode,
-              metaMode: fingerprint.webglMetaMode,
-            },
-            canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : { mode: 'Noise' }),
-            clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : { mode: 'Off' }),
-            audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : { mode: 'Off' }),
-            geo: fingerprint.geo || (fingerprint.geoEnabled !== undefined ? { enabled: fingerprint.geoEnabled, lat: fingerprint.geoLat, lon: fingerprint.geoLon } : { enabled: false }),
-            webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : { useMainIP: false }),
-            timezone: fingerprint.timezone || fingerprint.timezoneId || null,
-            seed: fingerprint.seed || profileId || 12345
-          };
-          
-          const deepInjectionScript = processInjectionTemplate(normalizedFp);
-          const stealthScript = buildStealthScript(normalizedFp);
-          
-          for (const p of context.pages()) {
-            await p.addInitScript({ path: fingerprintPatchPath });
-            await p.addInitScript({ path: audioSpoofPath });
-            await p.addInitScript(deepInjectionScript);
-            await p.addInitScript(stealthScript);
-          }
-          context.on('page', (newPage) => {
-            newPage.addInitScript({ path: fingerprintPatchPath }).catch(() => {});
-            newPage.addInitScript({ path: audioSpoofPath }).catch(() => {});
-            newPage.addInitScript(deepInjectionScript).catch(() => {});
-            newPage.addInitScript(stealthScript).catch(() => {});
-          });
-          console.log(`[Browser ${sessionId}] ✅ Stealth fingerprint injected for Playwright context với Stealth Plugin`);
-        } catch (fpError) {
-          console.warn(`[Browser ${sessionId}] Failed to inject fingerprint for Playwright:`, fpError);
+            hardwareConcurrency: fingerprint.hwc || fingerprint.hardware?.cores || null,
+            deviceMemory: fingerprint.dmem || fingerprint.hardware?.memoryGb || null,
+            languages: fingerprint.languages || null,
+            language: fingerprint.language || null
+          },
+          screen: fingerprint.screen || {
+            width: fingerprint.viewport?.width || 1920,
+            height: fingerprint.viewport?.height || 1080,
+            availWidth: fingerprint.viewport?.width || 1920,
+            availHeight: (fingerprint.viewport?.height || 1080) - 40,
+            colorDepth: 24,
+            pixelDepth: 24,
+            devicePixelRatio: fingerprint.viewport?.deviceScaleFactor || 1
+          },
+          webgl: fingerprint.webgl || {
+            vendor: null,
+            renderer: null,
+            imageMode: fingerprint.webglImageMode,
+            metaMode: fingerprint.webglMetaMode,
+          },
+          canvas: fingerprint.canvas || (fingerprint.canvasMode ? { mode: fingerprint.canvasMode } : { mode: 'Noise' }),
+          clientRects: fingerprint.clientRects || (fingerprint.clientRectsMode ? { mode: fingerprint.clientRectsMode } : { mode: 'Off' }),
+          audioContext: fingerprint.audioContext || (fingerprint.audioCtxMode ? { mode: fingerprint.audioCtxMode } : { mode: 'Off' }),
+          geo: fingerprint.geo || (fingerprint.geoEnabled !== undefined ? { enabled: fingerprint.geoEnabled, lat: fingerprint.geoLat, lon: fingerprint.geoLon } : { enabled: false }),
+          webrtc: fingerprint.webrtc || (fingerprint.webrtcMainIP !== undefined ? { useMainIP: fingerprint.webrtcMainIP } : { useMainIP: false }),
+          timezone: fingerprint.timezone || fingerprint.timezoneId || null,
+          seed: fingerprint.seed || profileId || 12345
+        };
+        
+        const deepInjectionScript = processInjectionTemplate(normalizedFp);
+        const stealthScript = buildStealthScript(normalizedFp);
+        
+        for (const p of context.pages()) {
+          await p.addInitScript({ path: fingerprintPatchPath });
+          await p.addInitScript({ path: audioSpoofPath });
+          await p.addInitScript(deepInjectionScript);
+          await p.addInitScript(stealthScript);
         }
+        context.on('page', (newPage) => {
+          newPage.addInitScript({ path: fingerprintPatchPath }).catch(() => {});
+          newPage.addInitScript({ path: audioSpoofPath }).catch(() => {});
+          newPage.addInitScript(deepInjectionScript).catch(() => {});
+          newPage.addInitScript(stealthScript).catch(() => {});
+        });
+        console.log(`[Browser ${sessionId}] ✅ Stealth fingerprint injected for Playwright context với Stealth Plugin`);
+      } catch (fpError) {
+        console.warn(`[Browser ${sessionId}] Failed to inject fingerprint for Playwright:`, fpError);
       }
-
-      return context;
-    } catch (playwrightError: any) {
-      console.error(`[Browser ${sessionId}] Playwright launch failed:`, playwrightError);
-      // If Playwright fails (e.g., browser not installed), fallback to Puppeteer
-      // Note: Puppeteer proxy auth needs to be handled via page.authenticate()
-      console.log(`[Browser ${sessionId}] Falling back to Puppeteer...`);
-      // Continue to Puppeteer path below
     }
+
+    return context;
+  } catch (playwrightError: any) {
+    console.error(`[Browser ${sessionId}] Playwright launchPersistentContext failed:`, playwrightError);
+    // If Playwright fails (e.g., browser not installed), fallback to Puppeteer
+    console.log(`[Browser ${sessionId}] ⚠️ Falling back to Puppeteer (không khuyến khích - dễ bị phát hiện)...`);
+    // Continue to Puppeteer path below
   }
 
   // Build launch args for Puppeteer path (no proxy auth required)
@@ -1036,13 +1089,12 @@ export async function launchBrowser(options: BrowserLaunchOptions): Promise<any>
     launchArgs.push('--restore-last-session');
   }
   
-  // WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader)
-  const useSwiftShader = fingerprint?.webgl?.useSwiftShader || fingerprint?.webglImageMode === 'swiftshader';
-  if (useSwiftShader) {
+  // WebGL/GPU renderer masking at system level (ép WebGL dùng SwiftShader) - chỉ dùng trong Puppeteer fallback
+  const useSwiftShaderPuppeteer = fingerprint?.webgl?.useSwiftShader || fingerprint?.webglImageMode === 'swiftshader';
+  if (useSwiftShaderPuppeteer) {
     launchArgs.push('--use-gl=swiftshader');          // ép WebGL dùng SwiftShader
     launchArgs.push('--use-angle=swiftshader');       // ANGLE -> swiftshader
     launchArgs.push('--disable-software-rasterizer=false');
-    // Optional: launchArgs.push('--gpu-rasterization-msaa-sample-count=0');
   }
 
   // Add proxy if provided (Puppeteer doesn't support auth in URL, use authenticate() instead)
@@ -1302,5 +1354,259 @@ export async function getOpenPageUrls(sessionId: number): Promise<string[]> {
     if (u && u !== 'about:blank') urls.push(u)
   }
   return urls
+}
+
+// =======================================================================
+// === PHIÊN BẢN HOÀN CHỈNH - HÀM executeWorkflow VỚI KHẢ NĂNG TỰ CHẨN ĐOÁN ===
+// =======================================================================
+async function executeWorkflowOnPuppeteerPage(page: any, workflow: any): Promise<void> {
+  console.log('[🧠 WORKFLOW ENGINE] BỘ NÃO ĐÃ ĐƯỢC KÍCH HOẠT.');
+
+  // --- BƯỚC 1: KIỂM TRA ĐẦU VÀO ---
+  if (!workflow) {
+    console.error('[❌ ENGINE FAULT] Dữ liệu workflow không hợp lệ hoặc không tồn tại.');
+    return;
+  }
+
+  // Kiểm tra workflow.data nếu có
+  let workflowData = workflow;
+  if (workflow.data && typeof workflow.data === 'object') {
+    workflowData = workflow.data;
+    console.log('[🔧] Đã lấy workflow data từ trường "data"');
+  }
+
+  if (!workflowData || !workflowData.nodes || !workflowData.edges) {
+    console.error('[❌ ENGINE FAULT] Dữ liệu workflow không hợp lệ hoặc không có nodes/edges.');
+    console.error('[❌ ENGINE FAULT] Workflow keys:', Object.keys(workflowData || {}));
+    return;
+  }
+
+  console.log('[✔] Dữ liệu đầu vào hợp lệ.');
+
+  // --- BƯỚC 2: MỞ NIÊM PHONG (JSON.parse) ---
+  let nodes: any[];
+  let edges: any[];
+  try {
+    console.log('[🔧] Đang kiểm tra định dạng dữ liệu...');
+    nodes = (typeof workflowData.nodes === 'string') ? JSON.parse(workflowData.nodes) : workflowData.nodes;
+    edges = (typeof workflowData.edges === 'string') ? JSON.parse(workflowData.edges) : workflowData.edges;
+    console.log(`[✔] Dữ liệu đã được phân tích thành công. Tìm thấy ${nodes.length} nodes và ${edges.length} edges.`);
+  } catch (error: any) {
+    console.error('[❌ ENGINE FAULT] Không thể phân tích chuỗi JSON của nodes/edges.', error);
+    return;
+  }
+
+  // --- BƯỚC 3: XÂY DỰNG BẢN ĐỒ VÀ TÌM ĐIỂM XUẤT PHÁT ---
+  const nodeMap = new Map(nodes.map((node: any) => [node.id, node]));
+  const edgeMap = new Map(edges.map((edge: any) => [edge.source, edge.target]));
+
+  let startNode = nodes.find((node: any) => 
+    node.type?.toLowerCase() === 'start' || 
+    node.type?.toLowerCase() === 'input' ||
+    node.type === 'startNode'
+  );
+
+  if (!startNode) {
+    console.error('[❌ ENGINE FAULT] Không tìm thấy Start Node trong kịch bản.');
+    console.error('[❌ ENGINE FAULT] Danh sách node types:', nodes.map((n: any) => n.type).join(', '));
+    return;
+  }
+
+  console.log(`[✔] Điểm xuất phát đã được xác định: Node ID ${startNode.id}.`);
+
+  // --- BƯỚC 4: VÒNG LẶP THỰC THI TỪNG BƯỚC ---
+  let currentNodeId = startNode.id;
+  let stepCount = 0;
+
+  while (currentNodeId) {
+    stepCount++;
+    const currentNode = nodeMap.get(currentNodeId);
+    
+    if (!currentNode) {
+      console.error(`[❌ ENGINE FAULT] Mất dấu! Không tìm thấy node với ID: ${currentNodeId}`);
+      break;
+    }
+
+    console.log(`[▶️] ĐANG THỰC THI NODE: ${currentNode.id} | LOẠI: ${currentNode.type}`);
+    console.log(`[▶️] Node data:`, JSON.stringify(currentNode.data, null, 2));
+
+    try {
+      const nodeType = currentNode.type?.toLowerCase() || '';
+      
+      switch (nodeType) {
+        case 'start':
+        case 'input':
+        case 'startnode':
+          // Không làm gì cả, chỉ là điểm bắt đầu
+          console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Start node, bỏ qua`);
+          break;
+
+        case 'end':
+        case 'output':
+        case 'endnode':
+          console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: End node, workflow hoàn thành`);
+          console.log('[🧠 WORKFLOW ENGINE] ĐÃ HOÀN TẤT NHIỆM VỤ.');
+          return;
+
+        case 'open page':
+        case 'openpage':
+        case 'openurlnode':
+        case 'open-url':
+          // Sửa lại đường dẫn để đọc trong 'config'
+          const url = currentNode.data?.config?.url || currentNode.data?.url || currentNode.data?.value;
+          if (url) {
+            console.log(`[🔧] Đang điều hướng đến URL: ${url}`);
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã mở trang: ${url}`);
+          } else {
+            console.warn(`[⚠️] CẢNH BÁO: Node "Open Page" không có thuộc tính 'url' trong config. Bỏ qua.`);
+          }
+          break;
+
+        case 'click':
+        case 'clicknode':
+          // Sửa lại đường dẫn để đọc trong 'config'
+          const clickSelector = currentNode.data?.config?.selector || currentNode.data?.selector || currentNode.data?.target || currentNode.data?.value;
+          if (clickSelector) {
+            console.log(`[🔧] Đang click vào selector: ${clickSelector}`);
+            await page.click(clickSelector, { timeout: 10000 });
+            console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã click vào: ${clickSelector}`);
+          } else {
+            console.warn(`[⚠️] CẢNH BÁO: Node "Click" không có selector trong config. Bỏ qua.`);
+          }
+          break;
+
+        case 'type':
+        case 'typenode':
+        case 'fill':
+          // Sửa lại đường dẫn để đọc trong 'config'
+          const typeSelector = currentNode.data?.config?.selector || currentNode.data?.selector || currentNode.data?.target || '';
+          const typeText = currentNode.data?.config?.text || currentNode.data?.text || currentNode.data?.value || '';
+          if (typeSelector && typeText) {
+            console.log(`[🔧] Đang nhập "${typeText}" vào selector: ${typeSelector}`);
+            await page.type(typeSelector, typeText);
+            console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã nhập "${typeText}" vào: ${typeSelector}`);
+          } else {
+            console.warn(`[⚠️] CẢNH BÁO: Node "Type" không đủ thông tin (selector: ${typeSelector}, text: ${typeText}). Bỏ qua.`);
+          }
+          break;
+
+        case 'wait':
+        case 'waitnode':
+          const milliseconds = currentNode.data?.milliseconds || currentNode.data?.time || currentNode.data?.value || 1000;
+          console.log(`[🔧] Đang chờ ${milliseconds}ms`);
+          await page.waitForTimeout(Number(milliseconds));
+          console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã chờ ${milliseconds}ms`);
+          break;
+
+        default:
+          console.warn(`[⚠️] CẢNH BÁO: Chưa định nghĩa hành động cho loại node: "${currentNode.type}". Bỏ qua.`);
+          break;
+      }
+    } catch (execError: any) {
+      console.error(`[❌ ENGINE FAULT] Lỗi khi thực thi hành động của node ${currentNode.id}:`, execError.message);
+      console.error(`[❌ ENGINE FAULT] Error stack:`, execError.stack);
+      break; // Dừng vòng lặp nếu có lỗi
+    }
+
+    // Tìm node tiếp theo
+    const nextNodeId = edgeMap.get(currentNodeId);
+    if (!nextNodeId) {
+      console.log('[🏁] KẾT THÚC KỊCH BẢN: Đã đi đến node cuối cùng.');
+      break;
+    }
+
+    currentNodeId = nextNodeId;
+
+    // Bảo vệ khỏi vòng lặp vô hạn
+    if (stepCount > 100) {
+      console.error('[❌ ENGINE FAULT] Vòng lặp quá dài (>100 bước). Dừng lại để tránh vòng lặp vô hạn.');
+      break;
+    }
+  }
+
+  console.log(`[🧠 WORKFLOW ENGINE] ĐÃ HOÀN TẤT NHIỆM VỤ sau ${stepCount} bước.`);
+}
+
+// Hàm "Fire and Wait" - quản lý browser lifecycle và workflow execution
+export async function runAndManageBrowser(
+  profile: any,
+  workflow: any,
+  options: {
+    profileId: number;
+    sessionId: number;
+    userAgent?: string;
+    fingerprint?: any;
+    proxy?: { host: string; port: number; username?: string; password?: string; type: string };
+  }
+): Promise<void> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log('[LIFECYCLE] ========================================');
+      console.log(`[LIFECYCLE] Nhận yêu cầu quản lý browser cho profile ${profile.id}`);
+      console.log(`[LIFECYCLE] Workflow: ${workflow?.name || 'none'}`);
+      console.log('[LIFECYCLE] ========================================');
+
+      // Khởi chạy browser - TRUYỀN PROFILE OBJECT ĐỂ LẤY DỮ LIỆU TỪ DB
+      const browser = await launchBrowser({
+        profileId: options.profileId,
+        sessionId: options.sessionId,
+        userAgent: options.userAgent,
+        fingerprint: options.fingerprint,
+        proxy: options.proxy,
+        profile: profile, // === TRUYỀN PROFILE OBJECT ĐỂ LẤY userAgent, screenWidth, screenHeight TỪ DB ===
+      });
+
+      if (!browser) {
+        return reject(new Error("Không thể khởi tạo browser."));
+      }
+
+      console.log(`[LIFECYCLE] ✅ Browser đã được khởi chạy cho profile ${profile.id}`);
+
+      // CHÌA KHÓA: Lắng nghe sự kiện trình duyệt bị đóng
+      browser.on('disconnected', () => {
+        console.log(`[LIFECYCLE] Trình duyệt cho profile ${profile.id} đã được đóng. Hoàn tất.`);
+        resolve(); // Chỉ khi đó Promise mới kết thúc
+      });
+
+      try {
+        // Lấy page từ browser
+        const pages = await browser.pages();
+        let page = pages[0];
+        
+        if (!page || page.isClosed()) {
+          page = await browser.newPage();
+        }
+
+        // Chỉ thực thi workflow NẾU nó tồn tại
+        if (workflow && workflow.data) {
+          console.log(`[WORKFLOW] Bắt đầu thực thi workflow "${workflow.name}"...`);
+          // =======================================================================
+          // === SỬA LẠI DUY NHẤT DÒNG NÀY - BỎ `await` ĐỂ WORKFLOW CHẠY NON-BLOCKING ===
+          // =======================================================================
+          executeWorkflowOnPuppeteerPage(page, workflow).catch((error: any) => {
+            console.error('[WORKFLOW] Lỗi khi thực thi workflow (non-blocking):', error);
+            // Không reject Promise chính, chỉ log lỗi để browser vẫn tiếp tục chạy
+          });
+          console.log(`[WORKFLOW] Workflow đã được khởi chạy (non-blocking). Trình duyệt sẽ tiếp tục chạy.`);
+        } else {
+          console.log('[WORKFLOW] Không có workflow nào được gán. Trình duyệt sẽ ở chế độ chờ.');
+        }
+
+        // Script sẽ bị treo ở đây, đợi sự kiện 'disconnected' ở trên
+      } catch (error: any) {
+        console.error('[LIFECYCLE] Lỗi trong quá trình thực thi:', error);
+        try {
+          await browser.close();
+        } catch (closeError) {
+          console.error('[LIFECYCLE] Lỗi khi đóng browser:', closeError);
+        }
+        reject(error);
+      }
+    } catch (error: any) {
+      console.error('[LIFECYCLE] Lỗi nghiêm trọng khi khởi chạy browser:', error);
+      reject(error);
+    }
+  });
 }
 

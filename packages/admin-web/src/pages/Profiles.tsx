@@ -678,13 +678,32 @@ export default function Profiles() {
   }
 
   const handleStart = async (profileId: number) => {
-    const proxyId = profileProxyMap[profileId]
     try {
-      // Gọi endpoint mới để tự động chạy workflow nếu profile có workflowId
-      const result = await api.startProfileWithWorkflow(profileId, { proxyId })
-      const message = result.message || 'Session started successfully! Browser should open now.'
-      alert(message)
-      loadProfiles()
+      // COMMENT LẠI HOẶC XÓA BỎ HOÀN TOÀN CUỘC GỌI API CŨ GÂY RA LỖI
+      // const proxyId = profileProxyMap[profileId]
+      // const result = await api.startProfileWithWorkflow(profileId, { proxyId })
+      // const message = result.message || 'Session started successfully! Browser should open now.'
+      // alert(message)
+      // loadProfiles()
+
+      // CHỈ GIỮ LẠI CUỘC GỌI IPC DUY NHẤT NÀY
+      if (window.electronAPI) {
+        // Sử dụng electronAPI nếu có
+        window.electronAPI.send('start-profile-and-run-workflow', profileId)
+        console.log(`[Frontend] Đã gửi IPC event 'start-profile-and-run-workflow' cho profile ${profileId}`)
+      } else if (window.electron?.ipcRenderer) {
+        // Fallback: sử dụng window.electron.ipcRenderer
+        window.electron.ipcRenderer.send('start-profile-and-run-workflow', profileId)
+        console.log(`[Frontend] Đã gửi IPC event 'start-profile-and-run-workflow' cho profile ${profileId}`)
+      } else {
+        // Nếu không có Electron API, fallback về API call (cho web version)
+        console.warn('[Frontend] Electron API không khả dụng, sử dụng API call thay thế')
+        const proxyId = profileProxyMap[profileId]
+        const result = await api.startProfileWithWorkflow(profileId, { proxyId })
+        const message = result.message || 'Session started successfully! Browser should open now.'
+        alert(message)
+        loadProfiles()
+      }
     } catch (error: any) {
       console.error('Failed to start profile:', error)
       const errorMessage = error.response?.data?.message || error.message || 'Failed to start profile'

@@ -9,3 +9,23 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
+// Electron API types
+interface ElectronAPI {
+  send: (channel: string, ...args: any[]) => void
+  invoke: (channel: string, ...args: any[]) => Promise<any>
+  on: (channel: string, callback: (...args: any[]) => void) => void
+  removeListener: (channel: string, callback: (...args: any[]) => void) => void
+}
+
+interface Window {
+  electronAPI?: ElectronAPI
+  electron?: {
+    ipcRenderer: {
+      send: (channel: string, ...args: any[]) => void
+      invoke: (channel: string, ...args: any[]) => Promise<any>
+      on: (channel: string, callback: (...args: any[]) => void) => void
+      removeListener: (channel: string, callback: (...args: any[]) => void) => void
+    }
+  }
+}
+

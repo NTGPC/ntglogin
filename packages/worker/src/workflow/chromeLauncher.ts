@@ -4,9 +4,10 @@ import { chromium, BrowserContext } from 'playwright';
 import * as path from 'path';
 
 // Path to fingerprint patch script (for Playwright)
-const fingerprintPatchPath = path.join(__dirname, '../../../src/inject/fingerprintPatch.js');
+// Sử dụng process.cwd() để lấy project root, đảm bảo đường dẫn đúng dù code được compile
+const fingerprintPatchPath = path.join(process.cwd(), 'src', 'inject', 'fingerprintPatch.js');
 // Path to audio spoof script (for Playwright)
-const audioSpoofPath = path.join(__dirname, '../../../src/inject/audioSpoof.js');
+const audioSpoofPath = path.join(process.cwd(), 'src', 'inject', 'audioSpoof.js');
 
 export type ProxyConfig = {
   host: string;

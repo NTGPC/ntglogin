@@ -8,131 +8,180 @@ const fs = require('fs');
 
 chromium.use(stealth);
 
-// HÀM 1: KHỞI CHẠY TRÌNH DUYỆT VÀ FAKE FINGERPRINT
-// Hàm này chỉ có MỘT nhiệm vụ: mở trình duyệt và trả về page object
-async function launchAndFingerprint(profileData) {
-  console.log('[BM] ========================================');
-  console.log('[BM] Bắt đầu khởi chạy trình duyệt...');
-  console.log(`[BM] Profile: ${profileData.name || 'Unknown'}`);
+// HÀM 1: KHỞI CHẠY TRÌNH DUYỆT VÀ FAKE FINGERPRINT (PHIÊN BẢN "BIẾT ĐỢI")
+// Hàm này sẽ trả về Promise và chỉ resolve khi trình duyệt bị đóng
+// profileId: ID của profile để lưu vào activeBrowsers Map
+async function launchAndFingerprint(profileData, profileId = null) {
+  // Trả về Promise để buộc tiến trình phải đợi
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log('[BM] ========================================');
+      console.log('[BM] Bắt đầu khởi chạy trình duyệt...');
+      console.log(`[BM] Profile: ${profileData.name || 'Unknown'}`);
 
-  const userAgent = profileData.userAgent || profileData.user_agent;
+      const userAgent = profileData.userAgent || profileData.user_agent;
 
-  if (!userAgent) {
-    throw new Error('Profile không có userAgent!');
-  }
+      if (!userAgent) {
+        throw new Error('Profile không có userAgent!');
+      }
 
-  // Phân tích User-Agent để lấy thông tin
-  let chromeVersion = '120';
-  const chromeMatch = userAgent.match(/Chrome\/(\d+)/);
-  if (chromeMatch) {
-    chromeVersion = chromeMatch[1];
-  }
+      // Phân tích User-Agent để lấy thông tin
+      let chromeVersion = '120';
+      const chromeMatch = userAgent.match(/Chrome\/(\d+)/);
+      if (chromeMatch) {
+        chromeVersion = chromeMatch[1];
+      }
 
-  let platform = "Windows";
-  let platformVersion = "10.0";
-  if (userAgent.includes("Windows NT 10.0")) {
-    platform = "Windows";
-    platformVersion = "10.0";
-  } else if (userAgent.includes("Mac OS X")) {
-    platform = "macOS";
-    const macVersionMatch = userAgent.match(/Mac OS X (\d+_\d+_\d+)/);
-    if (macVersionMatch) {
-      platformVersion = macVersionMatch[1].replace(/_/g, '.');
-    } else {
-      platformVersion = "10.15.7";
+      let platform = "Windows";
+      let platformVersion = "10.0";
+      if (userAgent.includes("Windows NT 10.0")) {
+        platform = "Windows";
+        platformVersion = "10.0";
+      } else if (userAgent.includes("Mac OS X")) {
+        platform = "macOS";
+        const macVersionMatch = userAgent.match(/Mac OS X (\d+_\d+_\d+)/);
+        if (macVersionMatch) {
+          platformVersion = macVersionMatch[1].replace(/_/g, '.');
+        } else {
+          platformVersion = "10.15.7";
+        }
+      } else if (userAgent.includes("Linux")) {
+        platform = "Linux";
+        platformVersion = "";
+      }
+
+      console.log(`[BM] Chrome version: ${chromeVersion}`);
+      console.log(`[BM] Platform: ${platform} ${platformVersion}`);
+
+      // Khởi chạy browser
+      const browser = await chromium.launch({
+        headless: false, // Rất quan trọng: phải là false để thấy trình duyệt
+        args: ['--disable-blink-features=AutomationControlled'],
+        ignoreDefaultArgs: ["--enable-automation"],
+      });
+
+      // Lưu browser vào Map để quản lý (nếu có profileId)
+      if (profileId !== null) {
+        const activeBrowsers = getActiveBrowsersMap();
+        if (activeBrowsers) {
+          activeBrowsers.set(profileId, browser);
+          console.log(`[BM] Đã lưu browser vào Map cho profile ${profileId}`);
+        }
+      }
+
+      // Đây là chìa khóa: Lắng nghe sự kiện trình duyệt bị đóng
+      browser.on('disconnected', () => {
+        console.log('[BM] Trình duyệt đã được đóng. Kịch bản kết thúc.');
+        
+        // Xóa browser khỏi Map khi đóng
+        if (profileId !== null) {
+          const activeBrowsers = getActiveBrowsersMap();
+          if (activeBrowsers) {
+            activeBrowsers.delete(profileId);
+            console.log(`[BM] Đã xóa browser khỏi Map cho profile ${profileId}`);
+          }
+        }
+        
+        resolve(); // Chỉ khi đó Promise mới hoàn thành
+      });
+
+      // Tạo context với viewport
+      const screenWidth = profileData.screen?.width || profileData.screenWidth || 1920;
+      const screenHeight = profileData.screen?.height || profileData.screenHeight || 1080;
+      
+      const context = await browser.newContext({
+        viewport: { width: screenWidth, height: screenHeight },
+      });
+
+      const page = await context.newPage();
+      const client = await page.context().newCDPSession(page);
+
+      // Set User-Agent và Client Hints qua CDP
+      await client.send('Emulation.setUserAgentOverride', {
+        userAgent: userAgent,
+        platform: (platform === 'Windows') ? 'Win32' : (platform === 'macOS' ? 'MacIntel' : 'Linux x86_64'),
+        userAgentMetadata: {
+          brands: [
+            { brand: 'Not_A Brand', version: '8' },
+            { brand: 'Chromium', version: chromeVersion },
+            { brand: 'Google Chrome', version: chromeVersion }
+          ],
+          fullVersion: `${chromeVersion}.0.0.0`,
+          platform: platform,
+          platformVersion: platformVersion,
+          architecture: 'x86',
+          model: '',
+          mobile: false
+        }
+      });
+
+      // Inject fingerprint script
+      const injectionScriptPath = path.join(__dirname, 'core', 'injection_script.js');
+      if (fs.existsSync(injectionScriptPath)) {
+        let injectionScript = fs.readFileSync(injectionScriptPath, 'utf-8');
+        
+        const languages = profileData.navigator?.languages || profileData.language ? [profileData.language] : ['en-US', 'en'];
+        const languagesStr = '[' + languages.map(l => `'${l}'`).join(', ') + ']';
+        
+        const replacements = {
+          '%%HARDWARE_CONCURRENCY%%': JSON.stringify(profileData.navigator?.hardwareConcurrency || profileData.hardwareConcurrency || 8),
+          '%%DEVICE_MEMORY%%': JSON.stringify(profileData.navigator?.deviceMemory || profileData.deviceMemory || 8),
+          '%%LANGUAGES%%': languagesStr,
+          '%%LANGUAGE%%': profileData.navigator?.language || profileData.language || 'en-US',
+          '%%SCREEN_WIDTH%%': JSON.stringify(screenWidth),
+          '%%SCREEN_HEIGHT%%': JSON.stringify(screenHeight),
+          '%%SCREEN_AVAIL_WIDTH%%': JSON.stringify(profileData.screen?.availWidth || screenWidth),
+          '%%SCREEN_AVAIL_HEIGHT%%': JSON.stringify(profileData.screen?.availHeight || (screenHeight - 40)),
+          '%%SCREEN_COLOR_DEPTH%%': JSON.stringify(profileData.screen?.colorDepth || 24),
+          '%%SCREEN_PIXEL_DEPTH%%': JSON.stringify(profileData.screen?.pixelDepth || 24),
+          '%%DEVICE_PIXEL_RATIO%%': JSON.stringify(profileData.screen?.devicePixelRatio || 1),
+          '%%WEBGL_VENDOR%%': profileData.webgl?.vendor || 'Intel Inc.',
+          '%%WEBGL_RENDERER%%': profileData.webgl?.renderer || 'Intel Iris OpenGL Engine',
+          '%%CANVAS_MODE%%': profileData.canvas?.mode || profileData.canvasMode || 'Noise',
+          '%%CANVAS_SEED%%': String(profileData.canvas?.seed || 12345),
+          '%%AUDIO_CONTEXT_MODE%%': profileData.audioContext?.mode || profileData.audioCtxMode || 'Off',
+          '%%AUDIO_SEED%%': String(profileData.audioContext?.seed || 12345),
+          '%%CLIENT_RECTS_MODE%%': profileData.clientRects?.mode || profileData.clientRectsMode || 'Off',
+          '%%GEO_ENABLED%%': JSON.stringify(profileData.geo?.enabled || profileData.geoEnabled || false),
+          '%%GEO_LAT%%': JSON.stringify(profileData.geo?.lat || profileData.geoLatitude || 10.762622),
+          '%%GEO_LON%%': JSON.stringify(profileData.geo?.lon || profileData.geoLongitude || 106.660172),
+          '%%WEBRTC_USE_MAIN_IP%%': JSON.stringify(profileData.webrtc?.useMainIP || profileData.webrtcMainIP || false),
+          '%%TIMEZONE%%': profileData.timezone || profileData.timezoneId || 'Asia/Ho_Chi_Minh',
+          '%%SEED%%': String(profileData.seed || 12345)
+        };
+
+        for (const [key, value] of Object.entries(replacements)) {
+          injectionScript = injectionScript.replace(new RegExp(key, 'g'), value);
+        }
+
+        await context.addInitScript(injectionScript);
+        console.log('[BM] Đã inject fingerprint script');
+      }
+
+      console.log('[BM] ✅ Trình duyệt đã khởi chạy và fake fingerprint thành công.');
+      console.log('[BM] ========================================\n');
+
+      // Bây giờ, chúng ta sẽ gọi hàm thực thi workflow TỪ BÊN TRONG NÀY
+      if (profileData.workflow) {
+        console.log('[BM] Bắt đầu thực thi workflow...');
+        await executeWorkflowOnPage(page, profileData.workflow);
+        console.log('[BM] Workflow đã hoàn thành. Trình duyệt sẽ ở lại cho đến khi bạn đóng nó.');
+      } else {
+        console.log('[BM] Profile không có workflow. Trình duyệt sẽ ở lại cho đến khi bạn đóng nó.');
+      }
+
+      // Lưu browser và page vào Map để quản lý (nếu cần)
+      const profileId = profileData.id || profileData.profileId;
+      if (profileId) {
+        // Note: Không thể return browser/page nữa vì Promise chỉ resolve khi browser đóng
+        // Nhưng vẫn có thể lưu vào Map nếu cần truy cập từ nơi khác
+      }
+
+    } catch (error) {
+      console.error('[BM] Lỗi nghiêm trọng khi khởi chạy trình duyệt:', error);
+      reject(error); // Báo lỗi nếu có sự cố
     }
-  } else if (userAgent.includes("Linux")) {
-    platform = "Linux";
-    platformVersion = "";
-  }
-
-  console.log(`[BM] Chrome version: ${chromeVersion}`);
-  console.log(`[BM] Platform: ${platform} ${platformVersion}`);
-
-  // Khởi chạy browser
-  const browser = await chromium.launch({
-    headless: false,
-    args: ['--disable-blink-features=AutomationControlled'],
-    ignoreDefaultArgs: ["--enable-automation"],
   });
-
-  // Tạo context với viewport
-  const screenWidth = profileData.screen?.width || profileData.screenWidth || 1920;
-  const screenHeight = profileData.screen?.height || profileData.screenHeight || 1080;
-  
-  const context = await browser.newContext({
-    viewport: { width: screenWidth, height: screenHeight },
-  });
-
-  const page = await context.newPage();
-  const client = await page.context().newCDPSession(page);
-
-  // Set User-Agent và Client Hints qua CDP
-  await client.send('Emulation.setUserAgentOverride', {
-    userAgent: userAgent,
-    platform: (platform === 'Windows') ? 'Win32' : (platform === 'macOS' ? 'MacIntel' : 'Linux x86_64'),
-    userAgentMetadata: {
-      brands: [
-        { brand: 'Not_A Brand', version: '8' },
-        { brand: 'Chromium', version: chromeVersion },
-        { brand: 'Google Chrome', version: chromeVersion }
-      ],
-      fullVersion: `${chromeVersion}.0.0.0`,
-      platform: platform,
-      platformVersion: platformVersion,
-      architecture: 'x86',
-      model: '',
-      mobile: false
-    }
-  });
-
-  // Inject fingerprint script
-  const injectionScriptPath = path.join(__dirname, 'core', 'injection_script.js');
-  if (fs.existsSync(injectionScriptPath)) {
-    let injectionScript = fs.readFileSync(injectionScriptPath, 'utf-8');
-    
-    const languages = profileData.navigator?.languages || profileData.language ? [profileData.language] : ['en-US', 'en'];
-    const languagesStr = '[' + languages.map(l => `'${l}'`).join(', ') + ']';
-    
-    const replacements = {
-      '%%HARDWARE_CONCURRENCY%%': JSON.stringify(profileData.navigator?.hardwareConcurrency || profileData.hardwareConcurrency || 8),
-      '%%DEVICE_MEMORY%%': JSON.stringify(profileData.navigator?.deviceMemory || profileData.deviceMemory || 8),
-      '%%LANGUAGES%%': languagesStr,
-      '%%LANGUAGE%%': profileData.navigator?.language || profileData.language || 'en-US',
-      '%%SCREEN_WIDTH%%': JSON.stringify(screenWidth),
-      '%%SCREEN_HEIGHT%%': JSON.stringify(screenHeight),
-      '%%SCREEN_AVAIL_WIDTH%%': JSON.stringify(profileData.screen?.availWidth || screenWidth),
-      '%%SCREEN_AVAIL_HEIGHT%%': JSON.stringify(profileData.screen?.availHeight || (screenHeight - 40)),
-      '%%SCREEN_COLOR_DEPTH%%': JSON.stringify(profileData.screen?.colorDepth || 24),
-      '%%SCREEN_PIXEL_DEPTH%%': JSON.stringify(profileData.screen?.pixelDepth || 24),
-      '%%DEVICE_PIXEL_RATIO%%': JSON.stringify(profileData.screen?.devicePixelRatio || 1),
-      '%%WEBGL_VENDOR%%': profileData.webgl?.vendor || 'Intel Inc.',
-      '%%WEBGL_RENDERER%%': profileData.webgl?.renderer || 'Intel Iris OpenGL Engine',
-      '%%CANVAS_MODE%%': profileData.canvas?.mode || profileData.canvasMode || 'Noise',
-      '%%CANVAS_SEED%%': String(profileData.canvas?.seed || 12345),
-      '%%AUDIO_CONTEXT_MODE%%': profileData.audioContext?.mode || profileData.audioCtxMode || 'Off',
-      '%%AUDIO_SEED%%': String(profileData.audioContext?.seed || 12345),
-      '%%CLIENT_RECTS_MODE%%': profileData.clientRects?.mode || profileData.clientRectsMode || 'Off',
-      '%%GEO_ENABLED%%': JSON.stringify(profileData.geo?.enabled || profileData.geoEnabled || false),
-      '%%GEO_LAT%%': JSON.stringify(profileData.geo?.lat || profileData.geoLatitude || 10.762622),
-      '%%GEO_LON%%': JSON.stringify(profileData.geo?.lon || profileData.geoLongitude || 106.660172),
-      '%%WEBRTC_USE_MAIN_IP%%': JSON.stringify(profileData.webrtc?.useMainIP || profileData.webrtcMainIP || false),
-      '%%TIMEZONE%%': profileData.timezone || profileData.timezoneId || 'Asia/Ho_Chi_Minh',
-      '%%SEED%%': String(profileData.seed || 12345)
-    };
-
-    for (const [key, value] of Object.entries(replacements)) {
-      injectionScript = injectionScript.replace(new RegExp(key, 'g'), value);
-    }
-
-    await context.addInitScript(injectionScript);
-    console.log('[BM] Đã inject fingerprint script');
-  }
-
-  console.log('[BM] ✅ Trình duyệt đã khởi chạy và fake fingerprint thành công.');
-  console.log('[BM] ========================================\n');
-
-  return { browser, page, context };
 }
 
 // HÀM 2: THỰC THI WORKFLOW
