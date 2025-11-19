@@ -173,6 +173,7 @@ export default function Profiles() {
   const [webglRenderer, setWebglRenderer] = useState<string>('')
   const [geoEnabled, setGeoEnabled] = useState(true)
   const [userAgents, setUserAgents] = useState<any[]>([])
+  const [webglRenderers, setWebglRenderers] = useState<any[]>([])
   const [webrtcMainIP, setWebrtcMainIP] = useState(true)
   const [proxyMode, setProxyMode] = useState<'manual' | 'library'>('manual')
   const [proxyManual, setProxyManual] = useState<{ host?: string; port?: number; username?: string; password?: string }>({})
@@ -219,35 +220,41 @@ export default function Profiles() {
     loadWorkflows() // Luôn load workflows để hiển thị dropdown
     if (SHOW_WORKFLOWS) loadAssignments()
     loadUserAgents()
+    loadWebglRenderers()
   }, [])
 
   const loadUserAgents = async () => {
     try {
-      // Lọc chỉ lấy User Agents có Chrome version 130-140 (match với backend validation)
-      const allUAs = await api.getUserAgentList()
-      const filteredUAs = allUAs.filter((ua: any) => {
-        const uaString = ua.value || ua.userAgent || ''
-        const chromeMatch = uaString.match(/Chrome\/(\d+)/)
-        if (chromeMatch) {
-          const version = parseInt(chromeMatch[1], 10)
-          return version >= 130 && version <= 140
-        }
-        return false
-      })
-      // Nếu không có từ API, dùng USER_AGENT_LIBRARY và lọc
-      const libraryUAs = USER_AGENT_LIBRARY.filter(ua => {
-        const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
-        if (chromeMatch) {
-          const version = parseInt(chromeMatch[1], 10)
-          return version >= 130 && version <= 140
-        }
-        return false
-      })
-      const finalUAs = filteredUAs.length > 0 ? filteredUAs : libraryUAs
-      setUserAgents(finalUAs)
-      console.log(`[Profiles] Loaded ${finalUAs.length} User-Agents (Chrome 130-140 only)`)
+      // NEW: Load từ API library thay vì constants
+      const libraryUAs = await api.getUserAgentLibrary({ minVersion: 130, maxVersion: 140 })
+      
+      // Fallback to constants nếu API trống
+      if (libraryUAs.length === 0) {
+        const fallbackUAs = USER_AGENT_LIBRARY.filter(ua => {
+          const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
+          if (chromeMatch) {
+            const version = parseInt(chromeMatch[1], 10)
+            return version >= 130 && version <= 140
+          }
+          return false
+        })
+        setUserAgents(fallbackUAs)
+        console.log(`[Profiles] Using fallback library: ${fallbackUAs.length} User-Agents`)
+      } else {
+        // Map API response to expected format
+        const mappedUAs = libraryUAs.map((ua: any) => ({
+          id: ua.id,
+          name: ua.name,
+          value: ua.value,
+          os: ua.os,
+          platform: ua.platform,
+          browserVersion: ua.browserVersion,
+        }))
+        setUserAgents(mappedUAs)
+        console.log(`[Profiles] Loaded ${mappedUAs.length} User-Agents from API library (Chrome 130-140)`)
+      }
     } catch (error) {
-      // Fallback to library
+      // Fallback to constants
       const libraryUAs = USER_AGENT_LIBRARY.filter(ua => {
         const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
         if (chromeMatch) {
@@ -257,7 +264,36 @@ export default function Profiles() {
         return false
       })
       setUserAgents(libraryUAs)
-      console.error('[Profiles] Failed to load User-Agent list, using library:', error)
+      console.error('[Profiles] Failed to load User-Agent library, using constants:', error)
+    }
+  }
+
+  const loadWebglRenderers = async () => {
+    try {
+      // NEW: Load từ API library
+      const libraryGPUs = await api.getWebglRendererLibrary()
+      
+      if (libraryGPUs.length > 0) {
+        // Map API response to expected format
+        const mappedGPUs = libraryGPUs.map((gpu: any) => ({
+          id: gpu.id,
+          vendor: gpu.vendor,
+          renderer: gpu.renderer,
+          os: gpu.os || 'Windows',
+        }))
+        setWebglRenderers(mappedGPUs)
+        console.log(`[Profiles] Loaded ${mappedGPUs.length} WebGL Renderers from API library`)
+      } else {
+        // Fallback to constants
+        const fallbackGPUs = getWebGLRenderersByOS('Windows').concat(getWebGLRenderersByOS('macOS'))
+        setWebglRenderers(fallbackGPUs)
+        console.log(`[Profiles] Using fallback library: ${fallbackGPUs.length} WebGL Renderers`)
+      }
+    } catch (error) {
+      // Fallback to constants
+      const fallbackGPUs = getWebGLRenderersByOS('Windows').concat(getWebGLRenderersByOS('macOS'))
+      setWebglRenderers(fallbackGPUs)
+      console.error('[Profiles] Failed to load WebGL Renderer library, using constants:', error)
     }
   }
 
@@ -324,7 +360,10 @@ export default function Profiles() {
       const uaLower = uaValue.toLowerCase()
       if (uaLower.includes('windows')) {
         setOsName('Windows')
-        const compatibleGPUs = getWebGLRenderersByOS('Windows');
+        // NEW: Use API library if available, fallback to constants
+        const compatibleGPUs = webglRenderers.length > 0 
+          ? webglRenderers.filter((gpu: any) => !gpu.os || gpu.os === 'Windows')
+          : getWebGLRenderersByOS('Windows');
         if (compatibleGPUs.length > 0) {
           const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
           setWebglRenderer(randomGPU.renderer);
@@ -332,7 +371,10 @@ export default function Profiles() {
         }
       } else if (uaLower.includes('macintosh') || uaLower.includes('mac os')) {
         setOsName('macOS')
-        const compatibleGPUs = getWebGLRenderersByOS('macOS');
+        // NEW: Use API library if available, fallback to constants
+        const compatibleGPUs = webglRenderers.length > 0 
+          ? webglRenderers.filter((gpu: any) => !gpu.os || gpu.os === 'macOS')
+          : getWebGLRenderersByOS('macOS');
         if (compatibleGPUs.length > 0) {
           const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
           setWebglRenderer(randomGPU.renderer);
@@ -1249,7 +1291,10 @@ export default function Profiles() {
                         if (version) setBrowserVersion(String(version));
                       }
                       // Auto-update WebGL Renderer
-                      const compatibleGPUs = getWebGLRenderersByOS(newOS);
+                      // NEW: Use API library if available, fallback to constants
+                      const compatibleGPUs = webglRenderers.length > 0 
+                        ? webglRenderers.filter((gpu: any) => !gpu.os || gpu.os === newOS || gpu.os === 'Windows' || gpu.os === 'macOS')
+                        : getWebGLRenderersByOS(newOS);
                       if (compatibleGPUs.length > 0) {
                         const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
                         setWebglRenderer(randomGPU.renderer);

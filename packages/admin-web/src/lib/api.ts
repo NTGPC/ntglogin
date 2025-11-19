@@ -449,5 +449,99 @@ export const api = {
       return []
     }
   },
+
+  // === USER AGENT LIBRARY (NEW CRUD API) ===
+  async getUserAgentLibrary(params?: { os?: string; minVersion?: number; maxVersion?: number }): Promise<any[]> {
+    try {
+      const queryParams = new URLSearchParams()
+      if (params?.os) queryParams.append('os', params.os)
+      if (params?.minVersion) queryParams.append('minVersion', String(params.minVersion))
+      if (params?.maxVersion) queryParams.append('maxVersion', String(params.maxVersion))
+      
+      const url = `/api/user-agents-library${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      const response = await apiClient.get(url)
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to get User-Agent library:', error)
+      return []
+    }
+  },
+
+  async getUserAgentLibraryById(id: number): Promise<any> {
+    try {
+      const response = await apiClient.get(`/api/user-agents-library/${id}`)
+      return response.data.data || response.data
+    } catch (error: any) {
+      console.error('Failed to get User-Agent by ID:', error)
+      throw error
+    }
+  },
+
+  async createUserAgentLibrary(data: {
+    name: string
+    value: string
+    os: string
+    platform: string
+    uaPlatform?: string
+    uaPlatformVersion?: string
+    uaFullVersion?: string
+    browserVersion?: number
+  }): Promise<any> {
+    const response = await apiClient.post('/api/user-agents-library', data)
+    return response.data.data || response.data
+  },
+
+  async updateUserAgentLibrary(id: number, data: Partial<any>): Promise<any> {
+    const response = await apiClient.put(`/api/user-agents-library/${id}`, data)
+    return response.data.data || response.data
+  },
+
+  async deleteUserAgentLibrary(id: number): Promise<void> {
+    await apiClient.delete(`/api/user-agents-library/${id}`)
+  },
+
+  // === WEBGL RENDERER LIBRARY (NEW CRUD API) ===
+  async getWebglRendererLibrary(params?: { os?: string; vendor?: string }): Promise<any[]> {
+    try {
+      const queryParams = new URLSearchParams()
+      if (params?.os) queryParams.append('os', params.os)
+      if (params?.vendor) queryParams.append('vendor', params.vendor)
+      
+      const url = `/api/webgl-renderers${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      const response = await apiClient.get(url)
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to get WebGL Renderer library:', error)
+      return []
+    }
+  },
+
+  async getWebglRendererLibraryById(id: number): Promise<any> {
+    try {
+      const response = await apiClient.get(`/api/webgl-renderers/${id}`)
+      return response.data.data || response.data
+    } catch (error: any) {
+      console.error('Failed to get WebGL Renderer by ID:', error)
+      throw error
+    }
+  },
+
+  async createWebglRendererLibrary(data: {
+    vendor: string
+    renderer: string
+    os?: string
+  }): Promise<any> {
+    const response = await apiClient.post('/api/webgl-renderers', data)
+    return response.data.data || response.data
+  },
+
+  async updateWebglRendererLibrary(id: number, data: Partial<any>): Promise<any> {
+    const response = await apiClient.put(`/api/webgl-renderers/${id}`, data)
+    return response.data.data || response.data
+  },
+
+  async deleteWebglRendererLibrary(id: number): Promise<void> {
+    await apiClient.delete(`/api/webgl-renderers/${id}`)
+  },
 }
 

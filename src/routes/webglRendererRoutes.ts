@@ -3,11 +3,13 @@ import * as webglRendererController from '../controllers/webglRendererController
 
 const router = Router();
 
-router.get('/', webglRendererController.getAll);
-router.get('/:id', webglRendererController.getById);
+router.get('/', webglRendererController.findAll);
+router.get('/:id', webglRendererController.findById);
 router.post('/', webglRendererController.create);
-router.patch('/:id', webglRendererController.update);
+router.put('/:id', webglRendererController.update);
 router.delete('/:id', webglRendererController.remove);
+router.get('/os/:os', webglRendererController.findByOS);
+router.get('/vendor/:vendor', webglRendererController.findByVendor);
 
 export default router;
 

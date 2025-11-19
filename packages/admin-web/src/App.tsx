@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Profiles from './pages/Profiles'
 import Proxies from './pages/Proxies'
 import Fingerprints from './pages/Fingerprints'
+import Settings from './pages/Settings'
 import Sessions from './pages/Sessions'
 import Jobs from './pages/Jobs'
 import Executions from './pages/Executions'
@@ -56,6 +57,7 @@ function App() {
           <Route path="profiles/editor" element={<ProfileEditor />} />
           <Route path="proxies" element={<Proxies />} />
           <Route path="fingerprints" element={<Fingerprints />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="sessions" element={<Sessions />} />
           <Route path="jobs" element={<Jobs />} />
           <Route path="executions" element={<Executions />} />
