@@ -9,6 +9,8 @@ export const getAllProfiles = async () => {
       proxy: true, // Lấy kèm thông tin proxy nếu có
       workflow: true, // Lấy kèm thông tin workflow đã được gán
       sessions: true, // Lấy kèm thông tin sessions
+      userAgentRef: true, // NEW: Lấy kèm thông tin UserAgent từ library
+      webglRendererRef: true, // NEW: Lấy kèm thông tin WebGL Renderer từ library
     },
   });
 };
@@ -21,6 +23,8 @@ export const getProfileById = async (id: number) => {
       proxy: true, // Lấy kèm thông tin proxy nếu có
       workflow: true, // Lấy kèm thông tin workflow đã được gán
       sessions: true, // Lấy kèm thông tin sessions
+      userAgentRef: true, // NEW: Lấy kèm thông tin UserAgent từ library
+      webglRendererRef: true, // NEW: Lấy kèm thông tin WebGL Renderer từ library
     },
   });
 };

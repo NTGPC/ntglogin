@@ -22,6 +22,49 @@ model User {
   @@map("users")
 }
 
+// ==========================================================
+// === BẢNG THƯ VIỆN USER AGENTS ===
+// ==========================================================
+model UserAgent {
+  id                Int       @id @default(autoincrement())
+  name              String    @unique // Ví dụ: "Windows 11 - Chrome 140"
+  value             String    @unique // Chuỗi user agent đầy đủ
+  os                String    // Ví dụ: "Windows", "macOS"
+  platform          String    // Ví dụ: "Win32", "MacIntel"
+  uaPlatform        String?   // Platform từ user agent
+  uaPlatformVersion String?   // Platform version
+  uaFullVersion     String?   // Full version string
+  browserVersion    Int?      // Browser version number (130-140)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Cho phép một UserAgent được sử dụng bởi nhiều Profile
+  profiles          Profile[]
+
+  @@index([os])
+  @@index([browserVersion])
+  @@map("user_agents")
+}
+
+// ==========================================================
+// === BẢNG THƯ VIỆN CARD ĐỒ HỌA (WebGL) ===
+// ==========================================================
+model WebglRenderer {
+  id        Int       @id @default(autoincrement())
+  vendor    String    // Ví dụ: "NVIDIA Corporation", "Intel Inc."
+  renderer  String    @unique // Ví dụ: "NVIDIA GeForce RTX 4090/PCIe/SSE2"
+  os        String?   // OS compatibility: "Windows", "macOS", "Linux"
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Cho phép một GPU được sử dụng bởi nhiều Profile
+  profiles  Profile[]
+
+  @@index([os])
+  @@index([vendor])
+  @@map("webgl_renderers")
+}
+
 // Profile model - browser profiles
 model Profile {
   id          Int      @id @default(autoincrement())
@@ -31,7 +74,12 @@ model Profile {
   updatedAt   DateTime @updatedAt
 
   // === NAVIGATOR - Thông tin trình duyệt và hệ điều hành ===
-  userAgent           String?  @unique // User Agent string (unique when provided)
+  // NEW: Sử dụng quan hệ với thư viện
+  userAgentId         Int?     // ID từ bảng UserAgent
+  userAgentRef         UserAgent? @relation(fields: [userAgentId], references: [id], onDelete: SetNull)
+  
+  // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
+  userAgent           String?  @unique // User Agent string (deprecated: use userAgentId)
   platform            String   @default("Win32") // "Win32" | "MacIntel" | "Linux x86_64"
   hardwareConcurrency Int      @default(8) // CPU cores (2-32 typical)
   deviceMemory        Int      @default(8) // RAM in GB (2-64 typical)
@@ -40,8 +88,14 @@ model Profile {
   // === HARDWARE - Canvas, WebGL, Audio fingerprinting ===
   canvasMode          String   @default("noise") // "noise" | "off" | "block"
   clientRectsMode     String?  // "noise" | "off" (optional, for backward compatibility)
-  webglRenderer       String?  // WebGL renderer string (e.g., "Intel Iris OpenGL Engine")
-  webglVendor         String?  // WebGL vendor string (e.g., "Intel Inc.")
+  
+  // NEW: Sử dụng quan hệ với thư viện WebGL
+  webglRendererId     Int?     // ID từ bảng WebglRenderer
+  webglRendererRef     WebglRenderer? @relation(fields: [webglRendererId], references: [id], onDelete: SetNull)
+  
+  // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
+  webglRenderer       String?  // WebGL renderer string (deprecated: use webglRendererId)
+  webglVendor         String?  // WebGL vendor string (deprecated: use webglRendererRef.vendor)
   webglImageMode      String?  // "noise" | "off" (optional, for backward compatibility)
   webglMetaMode       String?  // "mask" | "real" (optional, for backward compatibility)
   audioContextMode    String   @default("noise") // "noise" | "off"
@@ -91,6 +145,8 @@ model Profile {
   @@index([name])
   @@index([workflowId])
   @@index([userAgent])
+  @@index([userAgentId])
+  @@index([webglRendererId])
   @@map("profiles")
 }
 

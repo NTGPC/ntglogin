@@ -14,6 +14,8 @@ import insightsRoutes from '../insights/insights.routes';
 import changelogRoutes from './changelogRoutes';
 import gpuRoutes from './gpuRoutes';
 import userAgentLibraryRoutes from './userAgentLibraryRoutes';
+import userAgentRoutes from './userAgentRoutes';
+import webglRendererRoutes from './webglRendererRoutes';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -40,7 +42,9 @@ router.use('/', requireAuth, workflowsRouter);
 router.use('/insights', insightsRoutes);
 router.use('/changelogs', requireAuth, changelogRoutes);
 router.use('/gpus', gpuRoutes);
-router.use('/user-agents', userAgentLibraryRoutes);
+router.use('/user-agents', userAgentLibraryRoutes); // Legacy route
+router.use('/user-agents-library', requireAuth, userAgentRoutes); // New CRUD route for UserAgent library
+router.use('/webgl-renderers', requireAuth, webglRendererRoutes); // New CRUD route for WebGL Renderer library
 
 // Health check
 router.get('/health', (_req, res) => {

@@ -167,7 +167,19 @@ function sanitizeProfileData(body: any) {
     geoLatitude: body.geoLatitude ? parseFloat(String(body.geoLatitude)) : null,
     geoLongitude: body.geoLongitude ? parseFloat(String(body.geoLongitude)) : null,
 
-    // --- RELATION FIELDS ---
+    // --- RELATION FIELDS - NEW: Library IDs ---
+    userAgentId: (() => {
+      const value = body.userAgentId;
+      if (!value) return null;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) ? null : parsed;
+    })(),
+    webglRendererId: (() => {
+      const value = body.webglRendererId;
+      if (!value) return null;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) ? null : parsed;
+    })(),
     proxyId: (() => {
       const value = body.proxyId || body.proxyRefId;
       if (!value) return null;
@@ -211,14 +223,61 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     // ==========================================================
     // === GENERATE CÁC GIÁ TRỊ MẶC ĐỊNH NẾU THIẾU ===
     // ==========================================================
+    // NEW: Ưu tiên sử dụng userAgentId từ library, fallback về userAgent text (backward compatible)
     let userAgentToUse = cleanData.userAgent;
-    if (!userAgentToUse) {
+    let userAgentIdToUse: number | null = cleanData.userAgentId;
+    
+    if (userAgentIdToUse) {
+      // Nếu có userAgentId, lấy value từ database
+      try {
+        const userAgentRecord = await prisma.userAgent.findUnique({
+          where: { id: userAgentIdToUse },
+        });
+        if (userAgentRecord) {
+          userAgentToUse = userAgentRecord.value;
+          console.log(`[CREATE] Sử dụng UserAgent từ library (ID: ${userAgentIdToUse}):`, userAgentToUse);
+        } else {
+          console.warn(`[CREATE] UserAgent ID ${userAgentIdToUse} không tồn tại, sẽ dùng text hoặc generate mới`);
+          userAgentIdToUse = null;
+        }
+      } catch (error) {
+        console.warn(`[CREATE] Lỗi khi lấy UserAgent từ library:`, error);
+        userAgentIdToUse = null;
+      }
+    }
+    
+    if (!userAgentToUse && !userAgentIdToUse) {
       userAgentToUse = await getUniqueUA({ 
         browser: 'chrome', 
         versionHint: cleanData.browserVersion || undefined, 
         os: cleanData.os || 'Windows 10' 
       });
       console.log(`[CREATE] Không có UA trong body, đã generate mới:`, userAgentToUse);
+    }
+    
+    // NEW: Tương tự cho WebGL Renderer
+    let webglRendererToUse: string | null = cleanData.webglRenderer;
+    let webglVendorToUse: string | null = cleanData.webglVendor;
+    let webglRendererIdToUse: number | null = cleanData.webglRendererId;
+    
+    if (webglRendererIdToUse) {
+      // Nếu có webglRendererId, lấy vendor và renderer từ database
+      try {
+        const webglRecord = await prisma.webglRenderer.findUnique({
+          where: { id: webglRendererIdToUse },
+        });
+        if (webglRecord) {
+          webglRendererToUse = webglRecord.renderer;
+          webglVendorToUse = webglRecord.vendor;
+          console.log(`[CREATE] Sử dụng WebGL Renderer từ library (ID: ${webglRendererIdToUse}):`, webglRendererToUse);
+        } else {
+          console.warn(`[CREATE] WebGL Renderer ID ${webglRendererIdToUse} không tồn tại, sẽ dùng text`);
+          webglRendererIdToUse = null;
+        }
+      } catch (error) {
+        console.warn(`[CREATE] Lỗi khi lấy WebGL Renderer từ library:`, error);
+        webglRendererIdToUse = null;
+      }
     }
 
     let macToUse = cleanData.macAddress;
@@ -303,12 +362,20 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
       webrtcMode: cleanData.webrtcMode || 'fake',
       geolocationMode: cleanData.geolocationMode || 'fake',
       
+      // NEW: Sử dụng ID từ library nếu có, fallback về text (backward compatible)
+      ...(userAgentIdToUse ? { userAgentId: userAgentIdToUse } : {}),
+      ...(webglRendererIdToUse ? { webglRendererId: webglRendererIdToUse } : {}),
+      
+      // BACKWARD COMPATIBILITY: Giữ các trường text cũ
+      user_agent: userAgentToUse,
+      userAgent: userAgentToUse,
+      webglRenderer: webglRendererToUse,
+      webglVendor: webglVendorToUse,
+      
       // Các trường từ dataToCreate (đã được sanitize và loại bỏ geoEnabled)
       ...dataToCreate,
       
       // Override với các giá trị đã generate
-      user_agent: userAgentToUse,
-      userAgent: userAgentToUse,
       macAddress: macToUse,
       fingerprint: fp,
       fingerprintJson: fp,
@@ -465,7 +532,23 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     if (cleanData.webglMetaMode !== undefined && cleanData.webglMetaMode !== null) {
       dataToUpdate.webglMetaMode = cleanData.webglMetaMode;
     }
-    if (cleanData.webglRenderer !== undefined && cleanData.webglRenderer !== null) {
+    // NEW: Hỗ trợ cả webglRendererId (library) và webglRenderer (text)
+    if (cleanData.webglRendererId !== undefined && cleanData.webglRendererId !== null) {
+      dataToUpdate.webglRendererId = cleanData.webglRendererId;
+      // Lấy vendor và renderer từ library để đồng bộ
+      try {
+        const webglRecord = await prisma.webglRenderer.findUnique({
+          where: { id: cleanData.webglRendererId },
+        });
+        if (webglRecord) {
+          dataToUpdate.webglRenderer = webglRecord.renderer;
+          dataToUpdate.webglVendor = webglRecord.vendor;
+        }
+      } catch (error) {
+        console.warn(`[UPDATE] Lỗi khi lấy WebGL Renderer từ library:`, error);
+      }
+    } else if (cleanData.webglRenderer !== undefined && cleanData.webglRenderer !== null) {
+      // BACKWARD COMPATIBILITY: Giữ logic cũ
       dataToUpdate.webglRenderer = cleanData.webglRenderer;
     }
     if (cleanData.webglVendor !== undefined && cleanData.webglVendor !== null) {
