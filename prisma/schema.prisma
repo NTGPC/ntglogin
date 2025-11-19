@@ -73,16 +73,24 @@ model Profile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // === NAVIGATOR - Thông tin trình duyệt và hệ điều hành ===
+  // === NAVIGATOR & CLIENT HINTS (CỰC KỲ QUAN TRỌNG) ===
   // NEW: Sử dụng quan hệ với thư viện
   userAgentId         Int?     // ID từ bảng UserAgent
   userAgentRef         UserAgent? @relation(fields: [userAgentId], references: [id], onDelete: SetNull)
   
   // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
   userAgent           String?  @unique // User Agent string (deprecated: use userAgentId)
-  platform            String   @default("Win32") // "Win32" | "MacIntel" | "Linux x86_64"
-  hardwareConcurrency Int      @default(8) // CPU cores (2-32 typical)
-  deviceMemory        Int      @default(8) // RAM in GB (2-64 typical)
+  platform            String   @default("Win32") // Giá trị cho navigator.platform (ví dụ: "Win32", "MacIntel")
+  
+  // === CLIENT HINTS HEADERS (QUAN TRỌNG ĐỂ NHẤT QUÁN) ===
+  uaPlatform          String?  // Giá trị cho Client Hints Header (ví dụ: "Windows", "macOS")
+  uaPlatformVersion   String?  // Ví dụ: "10.0.0", "15.0.0"
+  uaFullVersion       String?  // Ví dụ: "120.0.6099.216"
+  uaMobile            Boolean  @default(false) // Mobile device flag
+  
+  // === HARDWARE & GRAPHICS ===
+  hardwareConcurrency Int      @default(8) // Số lõi CPU (2-32 typical)
+  deviceMemory        Int      @default(8) // Dung lượng RAM (GB) (2-64 typical)
   languages           String[] @default(["en-US", "en"]) // Array of language codes
 
   // === HARDWARE - Canvas, WebGL, Audio fingerprinting ===
@@ -97,16 +105,19 @@ model Profile {
   webglRenderer       String?  // WebGL renderer string (deprecated: use webglRendererId)
   webglVendor         String?  // WebGL vendor string (deprecated: use webglRendererRef.vendor)
   webglImageMode      String?  // "noise" | "off" (optional, for backward compatibility)
-  webglMetaMode       String?  // "mask" | "real" (optional, for backward compatibility)
-  audioContextMode    String   @default("noise") // "noise" | "off"
+  webglMetadataMode   String?  @default("mask") // "mask" | "real" - Chế độ giả mạo WebGL metadata
+  webglMetaMode       String?  // Deprecated: use webglMetadataMode instead
+  audioContextMode    String   @default("noise") // "noise" | "off" - Chế độ giả mạo AudioContext
 
   // === NETWORK - WebRTC, Geolocation ===
-  webrtcMode          String   @default("fake") // "fake" | "off"
+  webrtcMode          String   @default("fake") // "fake" | "off" | "real"
   webrtcMainIP        Boolean? @default(false) // Deprecated: use webrtcMode instead
-  geolocationMode     String   @default("fake") // "fake" | "off"
+  geolocationMode     String   @default("fake") // "fake" | "off" | "real"
   geolocationEnabled  Boolean? // Deprecated: use geolocationMode instead
-  geolocationLat      Float?  // Latitude (-90 to 90)
-  geolocationLon      Float?  // Longitude (-180 to 180)
+  geolocationLatitude  Float?  // Latitude (-90 to 90) - Dữ liệu giả mạo nếu geolocationMode = 'fake'
+  geolocationLongitude Float?  // Longitude (-180 to 180) - Dữ liệu giả mạo nếu geolocationMode = 'fake'
+  geolocationLat      Float?  // Deprecated: use geolocationLatitude instead
+  geolocationLon      Float?  // Deprecated: use geolocationLongitude instead
 
   // === LOCALIZATION & OTHER ===
   timezone            String?  // Timezone ID (e.g., "Asia/Bangkok", "America/Los_Angeles")
@@ -114,9 +125,13 @@ model Profile {
   language            String?  // Primary language (e.g., "en-US", "vi-VN")
   macAddress          String?  @unique // MAC address (unique)
 
-  // === SCREEN RESOLUTION ===
-  screenWidth         Int?     // Screen width in pixels
-  screenHeight        Int?     // Screen height in pixels
+  // === SCREEN & DISPLAY ===
+  screenWidth         Int?     @default(1920) // Screen width in pixels
+  screenHeight        Int?     @default(1080) // Screen height in pixels
+  colorDepth          Int?     @default(24) // Color depth (bits per pixel)
+  pixelRatio          Float?   @default(1.0) // Device pixel ratio
+  
+  // === OS INFORMATION ===
   osName              String?  // OS name (e.g., "Windows 10", "macOS", "Linux")
   os                  String?  // Deprecated: use osName instead
   osArch              String?  // OS architecture: "x86" | "x64" | "arm"

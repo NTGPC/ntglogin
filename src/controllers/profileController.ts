@@ -39,8 +39,40 @@ const createSchema = z.object({
   osName: z.string().optional(),
   osArch: z.enum(['x86','x64','arm']).optional(),
   browserVersion: z.number().int().min(130).max(140).optional(),
-  screenWidth: z.number().int().positive().optional(),
-  screenHeight: z.number().int().positive().optional(),
+  // === CLIENT HINTS (NEW) ===
+  uaPlatform: z.string().optional(),
+  uaPlatformVersion: z.string().optional(),
+  uaFullVersion: z.string().optional(),
+  uaMobile: z.boolean().optional(),
+  // === DISPLAY (NEW) ===
+  colorDepth: z.union([z.number().int().positive(), z.string()]).transform((val) => {
+    if (typeof val === 'string') {
+      const num = parseInt(val, 10);
+      return isNaN(num) || num < 1 ? undefined : num;
+    }
+    return val;
+  }).optional(),
+  pixelRatio: z.union([z.number().positive(), z.string()]).transform((val) => {
+    if (typeof val === 'string') {
+      const num = parseFloat(val);
+      return isNaN(num) || num < 0.1 ? undefined : num;
+    }
+    return val;
+  }).optional(),
+  screenWidth: z.union([z.number().int().positive(), z.string()]).transform((val) => {
+    if (typeof val === 'string') {
+      const num = parseInt(val, 10);
+      return isNaN(num) || num < 1 ? undefined : num;
+    }
+    return val;
+  }).optional(),
+  screenHeight: z.union([z.number().int().positive(), z.string()]).transform((val) => {
+    if (typeof val === 'string') {
+      const num = parseInt(val, 10);
+      return isNaN(num) || num < 1 ? undefined : num;
+    }
+    return val;
+  }).optional(),
   canvas: z.enum(['Noise','Off','Block']).optional(), // Thêm trường canvas
   canvasMode: z.enum(['Noise','Off','Block']).optional(),
   clientRects: z.enum(['Off','Noise']).optional(), // Thêm trường clientRects
@@ -54,6 +86,8 @@ const createSchema = z.object({
   geoEnabled: z.boolean().optional(),
   geoLatitude: z.number().min(-90).max(90).optional(),
   geoLongitude: z.number().min(-180).max(180).optional(),
+  geolocationLatitude: z.number().min(-90).max(90).optional(), // NEW: Alias for geoLatitude
+  geolocationLongitude: z.number().min(-180).max(180).optional(), // NEW: Alias for geoLongitude
   webrtcMainIp: z.boolean().optional(), // Thêm trường webrtcMainIp
   webrtcMainIP: z.boolean().optional(),
   proxyRefId: z.string().optional(),
@@ -104,6 +138,12 @@ function sanitizeProfileData(body: any) {
     timezone: String(body.timezone || body.timezoneId || 'Europe/London').trim(),
     timezoneId: String(body.timezone || body.timezoneId || 'Europe/London').trim(),
     language: String(body.language || 'en-US').trim(),
+    
+    // === CLIENT HINTS (NEW) ===
+    uaPlatform: body.uaPlatform ? String(body.uaPlatform).trim() : null,
+    uaPlatformVersion: body.uaPlatformVersion ? String(body.uaPlatformVersion).trim() : null,
+    uaFullVersion: body.uaFullVersion ? String(body.uaFullVersion).trim() : null,
+    uaMobile: body.uaMobile ?? false,
 
     // --- INTEGER FIELDS - Chuyển đổi an toàn với giá trị mặc định ---
     hardwareConcurrency: (() => {
@@ -136,6 +176,20 @@ function sanitizeProfileData(body: any) {
       const parsed = parseInt(String(value), 10);
       return isNaN(parsed) ? null : parsed;
     })(),
+    
+    // === DISPLAY (NEW) ===
+    colorDepth: (() => {
+      const value = body.colorDepth;
+      if (value === undefined || value === null || value === '') return 24;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) || parsed < 1 ? 24 : parsed;
+    })(),
+    pixelRatio: (() => {
+      const value = body.pixelRatio;
+      if (value === undefined || value === null || value === '') return 1.0;
+      const parsed = parseFloat(String(value));
+      return isNaN(parsed) || parsed < 0.1 ? 1.0 : parsed;
+    })(),
 
     // --- ARRAY FIELDS - Chuyển đổi từ string hoặc array ---
     languages: (() => {
@@ -164,8 +218,10 @@ function sanitizeProfileData(body: any) {
     webrtcMainIP: body.webrtcMainIP ?? body.webrtcMainIp ?? false,
     // geoEnabled được map sang geolocationEnabled (schema field)
     geolocationEnabled: body.geoEnabled ?? body.geolocationEnabled ?? (body.geolocationMode === 'fake'),
-    geoLatitude: body.geoLatitude ? parseFloat(String(body.geoLatitude)) : null,
-    geoLongitude: body.geoLongitude ? parseFloat(String(body.geoLongitude)) : null,
+    geoLatitude: body.geoLatitude || body.geolocationLatitude ? parseFloat(String(body.geoLatitude || body.geolocationLatitude)) : null,
+    geoLongitude: body.geoLongitude || body.geolocationLongitude ? parseFloat(String(body.geoLongitude || body.geolocationLongitude)) : null,
+    geolocationLatitude: body.geolocationLatitude || body.geoLatitude ? parseFloat(String(body.geolocationLatitude || body.geoLatitude)) : null,
+    geolocationLongitude: body.geolocationLongitude || body.geoLongitude ? parseFloat(String(body.geolocationLongitude || body.geoLongitude)) : null,
 
     // --- RELATION FIELDS - NEW: Library IDs ---
     userAgentId: (() => {
