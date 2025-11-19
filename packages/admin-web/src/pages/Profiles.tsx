@@ -25,6 +25,9 @@ import * as z from 'zod'
 import { Plus, Edit, Trash2, Play, Search } from 'lucide-react'
 import RandomizeButton from '@/components/ProfileCreateModal/RandomFingerprint'
 import GPUSelect from '@/components/GPUSelect'
+import { USER_AGENT_LIBRARY } from '@/constants/user-agents'
+import { getWebGLRenderersByOS } from '@/constants/webgl-renderers'
+import { EUROPEAN_TIMEZONES } from '@/constants/european-timezones'
 import '@/styles/profile-modal.css'
 
 const fpSchema = z.object({
@@ -162,19 +165,39 @@ export default function Profiles() {
   const [browserVersion, setBrowserVersion] = useState<string>('Auto')
   const [screenRes, setScreenRes] = useState<string>('1920x1080')
   const [canvasMode, setCanvasMode] = useState<'Noise' | 'Off' | 'Block'>('Noise')
-  const [clientRectsMode, setClientRectsMode] = useState<'Off' | 'Noise'>('Off')
-  const [audioCtxMode, setAudioCtxMode] = useState<'Off' | 'Noise'>('Off')
-  const [webglImageMode, setWebglImageMode] = useState<'Off' | 'Noise'>('Off')
+  const [clientRectsMode, setClientRectsMode] = useState<'Off' | 'Noise'>('Noise')
+  const [audioCtxMode, setAudioCtxMode] = useState<'Off' | 'Noise'>('Noise')
+  const [webglImageMode, setWebglImageMode] = useState<'Off' | 'Noise'>('Noise')
   const [webglMetaMode, setWebglMetaMode] = useState<'Mask' | 'Real'>('Mask')
   const [webglVendor, setWebglVendor] = useState<string>('')
   const [webglRenderer, setWebglRenderer] = useState<string>('')
-  const [geoEnabled, setGeoEnabled] = useState(false)
+  const [geoEnabled, setGeoEnabled] = useState(true)
   const [userAgents, setUserAgents] = useState<any[]>([])
-  const [webrtcMainIP, setWebrtcMainIP] = useState(false)
+  const [webrtcMainIP, setWebrtcMainIP] = useState(true)
   const [proxyMode, setProxyMode] = useState<'manual' | 'library'>('manual')
   const [proxyManual, setProxyManual] = useState<{ host?: string; port?: number; username?: string; password?: string }>({})
   const [proxyRefId, setProxyRefId] = useState<string>('')
-  const [macAddr, setMacAddr] = useState<string>('Auto random (unique)')
+  const [macAddr, setMacAddr] = useState<string>(() => {
+    // Auto-generate MAC Address ngay khi component mount
+    const b = new Uint8Array(6)
+    for (let i = 0; i < 6; i++) b[i] = Math.floor(Math.random() * 256)
+    b[0] = (b[0] | 0x02) & 0xfe // local-admin & unicast
+    return Array.from(b).map((v) => v.toString(16).padStart(2, '0')).join(':')
+  })
+  // Navigator Object - Thông số còn thiếu (Auto Random)
+  const [hardwareConcurrency, setHardwareConcurrency] = useState<number>(() => {
+    // Random CPU cores: 2-32 (không theo quy luật)
+    const cores = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]
+    return cores[Math.floor(Math.random() * cores.length)]
+  })
+  const [deviceMemory, setDeviceMemory] = useState<number>(() => {
+    // Random RAM: 2-64 GB (không theo quy luật)
+    const ram = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64]
+    return ram[Math.floor(Math.random() * ram.length)]
+  })
+  const [languages, setLanguages] = useState<string[]>(['en-US', 'en']) // Language array
+  const [timezone, setTimezone] = useState<string>('Europe/London') // Timezone
+  const [language, setLanguage] = useState<string>('en-US') // Primary language
 
   const {
     register,
@@ -200,12 +223,51 @@ export default function Profiles() {
 
   const loadUserAgents = async () => {
     try {
-      const uaList = await api.getUserAgentList()
-      setUserAgents(uaList)
-      console.log(`[Profiles] Loaded ${uaList.length} User-Agents`)
+      // Lọc chỉ lấy User Agents có Chrome version 130-141
+      const allUAs = await api.getUserAgentList()
+      const filteredUAs = allUAs.filter((ua: any) => {
+        const uaString = ua.value || ua.userAgent || ''
+        const chromeMatch = uaString.match(/Chrome\/(\d+)/)
+        if (chromeMatch) {
+          const version = parseInt(chromeMatch[1], 10)
+          return version >= 130 && version <= 141
+        }
+        return false
+      })
+      // Nếu không có từ API, dùng USER_AGENT_LIBRARY và lọc
+      const libraryUAs = USER_AGENT_LIBRARY.filter(ua => {
+        const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
+        if (chromeMatch) {
+          const version = parseInt(chromeMatch[1], 10)
+          return version >= 130 && version <= 141
+        }
+        return false
+      })
+      const finalUAs = filteredUAs.length > 0 ? filteredUAs : libraryUAs
+      setUserAgents(finalUAs)
+      console.log(`[Profiles] Loaded ${finalUAs.length} User-Agents (Chrome 130-141 only)`)
     } catch (error) {
-      console.error('[Profiles] Failed to load User-Agent list:', error)
+      // Fallback to library
+      const libraryUAs = USER_AGENT_LIBRARY.filter(ua => {
+        const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
+        if (chromeMatch) {
+          const version = parseInt(chromeMatch[1], 10)
+          return version >= 130 && version <= 141
+        }
+        return false
+      })
+      setUserAgents(libraryUAs)
+      console.error('[Profiles] Failed to load User-Agent list, using library:', error)
     }
+  }
+
+  // Extract browser version từ User Agent string
+  const extractBrowserVersion = (uaString: string): number | null => {
+    const chromeMatch = uaString.match(/Chrome\/(\d+)/)
+    if (chromeMatch) {
+      return parseInt(chromeMatch[1], 10)
+    }
+    return null
   }
 
   const handleUserAgentChange = (uaValue: string) => {
@@ -218,20 +280,58 @@ export default function Profiles() {
       setUaEditable(true)
     }
     
-    // Tự động đồng bộ OS nếu User-Agent có OS info
-    const selectedUA = userAgents.find(ua => ua.value === uaValue)
+    // Auto-extract và set Browser Version từ User Agent
+    const version = extractBrowserVersion(uaValue)
+    if (version && version >= 130 && version <= 141) {
+      setBrowserVersion(String(version))
+    }
+    
+    // Tự động đồng bộ OS và WebGL Renderer nếu User-Agent có OS info
+    const selectedUA = USER_AGENT_LIBRARY.find(ua => ua.value === uaValue) || userAgents.find(ua => ua.value === uaValue)
     if (selectedUA && selectedUA.os) {
       // Map OS từ user_agents.json sang format của form
       const osMap: Record<string, string> = {
-        'Windows': 'Windows 10',
-        'Mac OS': 'macOS M1',
+        'Windows': 'Windows',
+        'Windows 10': 'Windows 10',
+        'Windows 11': 'Windows 11',
+        'Mac OS': 'macOS',
+        'macOS': 'macOS',
         'Linux': 'Linux',
         'Android': 'Android',
         'iOS': 'iOS'
       }
-      const mappedOS = osMap[selectedUA.os] || 'Windows 10'
+      const mappedOS = osMap[selectedUA.os] || 'Windows'
       setOsName(mappedOS)
-      console.log(`[Profiles] ✅ Auto-synced OS to: ${mappedOS} based on User-Agent: ${selectedUA.name}`)
+      
+      // Auto-update WebGL Renderer dựa trên OS mới
+      const compatibleGPUs = getWebGLRenderersByOS(mappedOS);
+      if (compatibleGPUs.length > 0) {
+        const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
+        setWebglRenderer(randomGPU.renderer);
+        setWebglVendor(randomGPU.vendor);
+      }
+      
+      console.log(`[Profiles] ✅ Auto-synced OS: ${mappedOS}, Browser Version: ${version}, WebGL Renderer based on User-Agent`)
+    } else {
+      // Nếu không tìm thấy trong library, detect OS từ UA string
+      const uaLower = uaValue.toLowerCase()
+      if (uaLower.includes('windows')) {
+        setOsName('Windows')
+        const compatibleGPUs = getWebGLRenderersByOS('Windows');
+        if (compatibleGPUs.length > 0) {
+          const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
+          setWebglRenderer(randomGPU.renderer);
+          setWebglVendor(randomGPU.vendor);
+        }
+      } else if (uaLower.includes('macintosh') || uaLower.includes('mac os')) {
+        setOsName('macOS')
+        const compatibleGPUs = getWebGLRenderersByOS('macOS');
+        if (compatibleGPUs.length > 0) {
+          const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
+          setWebglRenderer(randomGPU.renderer);
+          setWebglVendor(randomGPU.vendor);
+        }
+      }
     }
   }
   
@@ -541,6 +641,16 @@ export default function Profiles() {
         // MAC
         if (profile.macAddress) setMacAddr(profile.macAddress)
         else if (fp.mac) setMacAddr(fp.mac)
+        
+        // Navigator Object - Load từ profile
+        if (profile.hardwareConcurrency) setHardwareConcurrency(profile.hardwareConcurrency)
+        if (profile.deviceMemory) setDeviceMemory(profile.deviceMemory)
+        if (profile.languages && Array.isArray(profile.languages)) setLanguages(profile.languages)
+        if (profile.timezone) setTimezone(profile.timezone)
+        else if (profile.timezoneId) setTimezone(profile.timezoneId)
+        else if (fp.timezoneId) setTimezone(fp.timezoneId)
+        if (profile.language) setLanguage(profile.language)
+        else if (fp.language) setLanguage(fp.language)
       } catch {}
     } else {
       reset({
@@ -554,14 +664,29 @@ export default function Profiles() {
       setOsName('Windows 10')
       setOsArch('x64')
       setBrowserVersion('Auto')
-      setScreenRes('1920x1080')
+      // Random Screen Resolution
+      const resolutions = ['1366x768', '1536x864', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3440x1440', '3840x2160']
+      setScreenRes(resolutions[Math.floor(Math.random() * resolutions.length)])
       setCanvasMode('Noise')
-      setClientRectsMode('Off')
-      setAudioCtxMode('Off')
-      setWebglImageMode('Off')
+      setClientRectsMode('Noise')
+      setAudioCtxMode('Noise')
+      setWebglImageMode('Noise')
       setWebglMetaMode('Mask')
-      setGeoEnabled(false)
-      setWebrtcMainIP(false)
+      setGeoEnabled(true)
+      setWebrtcMainIP(true)
+      // Auto-generate MAC Address
+      const b = new Uint8Array(6)
+      for (let i = 0; i < 6; i++) b[i] = Math.floor(Math.random() * 256)
+      b[0] = (b[0] | 0x02) & 0xfe
+      setMacAddr(Array.from(b).map((v) => v.toString(16).padStart(2, '0')).join(':'))
+      // Reset Navigator Object fields - Auto Random
+      const cores = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]
+      const ram = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64]
+      setHardwareConcurrency(cores[Math.floor(Math.random() * cores.length)])
+      setDeviceMemory(ram[Math.floor(Math.random() * ram.length)])
+      setLanguages(['en-US', 'en'])
+      setTimezone('Europe/London')
+      setLanguage('en-US')
     }
   }, [editingProfile, reset])
 
@@ -638,12 +763,12 @@ export default function Profiles() {
       if (proxyMode === 'manual' && proxyManual.host && proxyManual.port) payload.proxyManual = proxyManual
       if (macAddr !== 'Auto random (unique)') payload.macAddress = macAddr
       
-      // New advanced fields (optional, will use defaults if not provided)
-      // These can be added to UI later if needed
-      // payload.timezoneId = timezoneId
-      // payload.language = language
-      // payload.hardwareConcurrency = hardwareConcurrency
-      // payload.deviceMemory = deviceMemory
+      // Navigator Object - Thông số fingerprint đầy đủ
+      payload.hardwareConcurrency = Number(hardwareConcurrency)
+      payload.deviceMemory = Number(deviceMemory)
+      payload.languages = languages
+      payload.timezone = timezone
+      payload.language = language
       // payload.geoLatitude = geoLatitude
       // payload.geoLongitude = geoLongitude
 
@@ -1086,17 +1211,50 @@ export default function Profiles() {
               <div className="grid md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>OS</Label>
-                  <select value={osName} onChange={(e) => setOsName(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    <option value="Windows 11">Windows 11</option>
+                  <select 
+                    value={osName} 
+                    onChange={(e) => {
+                      const newOS = e.target.value;
+                      setOsName(newOS);
+                      // Auto-update User Agent và WebGL Renderer khi OS thay đổi
+                      // Lọc chỉ lấy UA có Chrome 130-141
+                      const compatibleAgents = USER_AGENT_LIBRARY.filter(agent => {
+                        const agentOS = agent.os || '';
+                        const isOSMatch = agentOS === newOS || agentOS.includes(newOS) || newOS.includes(agentOS);
+                        if (!isOSMatch) return false;
+                        // Lọc version 130-141
+                        const chromeMatch = agent.value.match(/Chrome\/(\d+)/);
+                        if (chromeMatch) {
+                          const version = parseInt(chromeMatch[1], 10);
+                          return version >= 130 && version <= 141;
+                        }
+                        return false;
+                      });
+                      if (compatibleAgents.length > 0) {
+                        const randomAgent = compatibleAgents[Math.floor(Math.random() * compatibleAgents.length)];
+                        const input = document.getElementById('user_agent') as HTMLInputElement | null;
+                        if (input) {
+                          input.value = randomAgent.value;
+                          setUaEditable(true);
+                        }
+                        // Auto-extract Browser Version từ UA
+                        const version = extractBrowserVersion(randomAgent.value);
+                        if (version) setBrowserVersion(String(version));
+                      }
+                      // Auto-update WebGL Renderer
+                      const compatibleGPUs = getWebGLRenderersByOS(newOS);
+                      if (compatibleGPUs.length > 0) {
+                        const randomGPU = compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)];
+                        setWebglRenderer(randomGPU.renderer);
+                        setWebglVendor(randomGPU.vendor);
+                      }
+                    }} 
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="Windows">Windows</option>
                     <option value="Windows 10">Windows 10</option>
-                    <option value="Windows 8.1">Windows 8.1</option>
-                    <option value="macOS M1">macOS M1</option>
-                    <option value="macOS M2">macOS M2</option>
-                    <option value="macOS M3">macOS M3</option>
-                    <option value="macOS M4">macOS M4</option>
-                    <option value="Linux">Linux</option>
-                    <option value="Android">Android</option>
-                    <option value="iOS">iOS</option>
+                    <option value="Windows 11">Windows 11</option>
+                    <option value="macOS">macOS</option>
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -1121,18 +1279,19 @@ export default function Profiles() {
               {/* Browser Version & Screen */}
               <div className="grid md:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label>Browser Version</Label>
-                  <select value={browserVersion} onChange={(e) => setBrowserVersion(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <Label>Browser Version (Auto từ User Agent)</Label>
+                  <select value={browserVersion} onChange={(e) => setBrowserVersion(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm bg-gray-50" disabled>
                     <option>Auto</option>
-                    {[140,139,138,137,136,135,134,133,132,131,130].map((v) => (
+                    {[141,140,139,138,137,136,135,134,133,132,131,130].map((v) => (
                       <option key={v} value={String(v)}>
                         {v}
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-muted-foreground">Tự động chọn dựa trên User Agent</p>
                 </div>
                 <div className="space-y-1">
-                  <Label>Screen Resolution</Label>
+                  <Label>Screen Resolution (Random)</Label>
                   <select value={screenRes} onChange={(e) => setScreenRes(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                     {['1366x768', '1536x864', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3440x1440', '3840x2160'].map((r) => (
                       <option key={r} value={r}>
@@ -1140,78 +1299,145 @@ export default function Profiles() {
                       </option>
                     ))}
                   </select>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-2"
+                    onClick={() => {
+                      const resolutions = ['1366x768', '1536x864', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3440x1440', '3840x2160']
+                      setScreenRes(resolutions[Math.floor(Math.random() * resolutions.length)])
+                    }}
+                  >
+                    🎲 Random
+                  </Button>
                 </div>
               </div>
 
-              {/* Toggles */}
-              <div className="grid md:grid-cols-2 gap-3 text-sm">
+              {/* Fingerprint Settings - Button Groups */}
+              <div className="space-y-4">
+                {/* Canvas */}
                 <div>
-                  <Label>Canvas</Label>
-                  <div className="flex gap-3 mt-2">
+                  <Label className="mb-2 block">Canvas</Label>
+                  <div className="flex gap-2">
                     {(['Noise', 'Off', 'Block'] as const).map((m) => (
-                      <label key={m} className="flex items-center gap-1">
-                        <input type="radio" checked={canvasMode === m} onChange={() => setCanvasMode(m)} /> {m}
-                      </label>
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setCanvasMode(m)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          canvasMode === m
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {m}
+                      </button>
                     ))}
                   </div>
                 </div>
+
+                {/* Client Rects */}
                 <div>
-                  <Label>Client Rects</Label>
-                  <div className="flex gap-3 mt-2">
-                    {(['Off', 'Noise'] as const).map((m) => (
-                      <label key={m} className="flex items-center gap-1">
-                        <input type="radio" checked={clientRectsMode === m} onChange={() => setClientRectsMode(m)} /> {m}
-                      </label>
+                  <Label className="mb-2 block">Client Rects</Label>
+                  <div className="flex gap-2">
+                    {(['Noise', 'Off'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setClientRectsMode(m)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          clientRectsMode === m
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {m}
+                      </button>
                     ))}
                   </div>
                 </div>
+
+                {/* Audio Context */}
                 <div>
-                  <Label>Audio Context</Label>
-                  <div className="flex gap-3 mt-2">
-                    {(['Off', 'Noise'] as const).map((m) => (
-                      <label key={m} className="flex items-center gap-1">
-                        <input type="radio" checked={audioCtxMode === m} onChange={() => setAudioCtxMode(m)} /> {m}
-                      </label>
+                  <Label className="mb-2 block">Audio Context</Label>
+                  <div className="flex gap-2">
+                    {(['Noise', 'Off'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setAudioCtxMode(m)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          audioCtxMode === m
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {m}
+                      </button>
                     ))}
                   </div>
                 </div>
+
+                {/* WebGL Image */}
                 <div>
-                  <Label>WebGL Image</Label>
-                  <div className="flex gap-3 mt-2">
-                    {(['Off', 'Noise'] as const).map((m) => (
-                      <label key={m} className="flex items-center gap-1">
-                        <input type="radio" checked={webglImageMode === m} onChange={() => setWebglImageMode(m)} /> {m}
-                      </label>
+                  <Label className="mb-2 block">WebGL Image</Label>
+                  <div className="flex gap-2">
+                    {(['Noise', 'Off'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setWebglImageMode(m)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          webglImageMode === m
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {m}
+                      </button>
                     ))}
                   </div>
                 </div>
+
+                {/* WebGL Metadata */}
                 <div>
-                  <Label>WebGL Metadata</Label>
-                  <div className="flex gap-3 mt-2">
+                  <Label className="mb-2 block">WebGL Metadata</Label>
+                  <div className="flex gap-2">
                     {(['Mask', 'Real'] as const).map((m) => (
-                      <label key={m} className="flex items-center gap-1">
-                        <input type="radio" checked={webglMetaMode === m} onChange={() => setWebglMetaMode(m)} /> {m}
-                      </label>
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setWebglMetaMode(m)}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                          webglMetaMode === m
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {m}
+                      </button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              {/* GPU Selection */}
+              {/* GPU Selection - Auto từ User Agent */}
               <div className="space-y-1">
-                <Label>WebGL Renderer (Card đồ họa)</Label>
+                <Label>WebGL Renderer (Card đồ họa - Auto từ User Agent)</Label>
                 <GPUSelect value={webglRenderer} onChange={(angle, vendor) => { setWebglRenderer(angle); setWebglVendor(vendor); }} />
+                <p className="text-xs text-muted-foreground">Tự động chọn dựa trên OS từ User Agent</p>
               </div>
 
-              {/* GEO Location & WebRTC */}
+              {/* GEO Location & WebRTC - Luôn bật */}
               <div className="flex items-center gap-6">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={geoEnabled} onChange={(e) => setGeoEnabled(e.target.checked)} /> GEO Location
-                  <span className="text-xs text-muted-foreground">{geoEnabled ? 'Using fake (hide original)' : 'Using original'}</span>
+                  <input type="checkbox" checked={geoEnabled} onChange={(e) => setGeoEnabled(e.target.checked)} disabled /> GEO Location
+                  <span className="text-xs text-muted-foreground">Always enabled (fake location)</span>
                 </label>
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={webrtcMainIP} onChange={(e) => setWebrtcMainIP(e.target.checked)} /> WebRTC IP (main)
-                  <span className="text-xs text-muted-foreground">{webrtcMainIP ? 'Using fake (hide original)' : 'Using original'}</span>
+                  <input type="checkbox" checked={webrtcMainIP} onChange={(e) => setWebrtcMainIP(e.target.checked)} disabled /> WebRTC IP (main)
+                  <span className="text-xs text-muted-foreground">Always enabled (fake IP)</span>
                 </label>
               </div>
 
@@ -1245,14 +1471,131 @@ export default function Profiles() {
                 )}
               </div>
 
-              {/* MAC */}
+              {/* MAC Address - Auto random và hiển thị */}
               <div className="space-y-1">
-                <Label>MAC Address</Label>
+                <Label>MAC Address (Auto Random)</Label>
                 <div className="flex gap-2 items-center">
-                  <Input value={macAddr} onChange={(e) => setMacAddr(e.target.value)} placeholder="Auto random (unique)" />
-                  <Button type="button" variant="outline" onClick={regenMac} title="Regenerate MAC">
-                    Refresh
+                  <Input value={macAddr} onChange={(e) => setMacAddr(e.target.value)} placeholder="Auto random (unique)" readOnly className="bg-gray-50" />
+                  <Button type="button" variant="outline" onClick={() => {
+                    const b = new Uint8Array(6)
+                    for (let i = 0; i < 6; i++) b[i] = Math.floor(Math.random() * 256)
+                    b[0] = (b[0] | 0x02) & 0xfe
+                    setMacAddr(Array.from(b).map((v) => v.toString(16).padStart(2, '0')).join(':'))
+                  }} title="Regenerate MAC">
+                    🔄 Refresh
                   </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">MAC Address được tự động tạo ngẫu nhiên và hiển thị</p>
+              </div>
+
+              {/* Navigator Object - Thông số fingerprint đầy đủ */}
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Navigator Object (Thông tin trình duyệt)</h3>
+                
+                {/* Hardware Concurrency & Device Memory */}
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Hardware Concurrency (CPU Cores - Auto Random)</Label>
+                    <div className="flex gap-2 items-center">
+                      <select 
+                        value={hardwareConcurrency} 
+                        onChange={(e) => setHardwareConcurrency(Number(e.target.value))}
+                        className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {[2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32].map((cores) => (
+                          <option key={cores} value={cores}>
+                            {cores} cores
+                          </option>
+                        ))}
+                      </select>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          const cores = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]
+                          setHardwareConcurrency(cores[Math.floor(Math.random() * cores.length)])
+                        }}
+                        title="Random CPU Cores"
+                      >
+                        🎲
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Số lõi CPU logic (2-32) - Tự động random khi tạo profile</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Device Memory (RAM - Auto Random)</Label>
+                    <div className="flex gap-2 items-center">
+                      <select 
+                        value={deviceMemory} 
+                        onChange={(e) => setDeviceMemory(Number(e.target.value))}
+                        className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {[2, 4, 6, 8, 12, 16, 24, 32, 48, 64].map((gb) => (
+                          <option key={gb} value={gb}>
+                            {gb} GB
+                          </option>
+                        ))}
+                      </select>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          const ram = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64]
+                          setDeviceMemory(ram[Math.floor(Math.random() * ram.length)])
+                        }}
+                        title="Random RAM"
+                      >
+                        🎲
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Dung lượng RAM (2-64 GB) - Tự động random khi tạo profile</p>
+                  </div>
+                </div>
+
+                {/* Languages & Primary Language */}
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Languages (Ngôn ngữ ưu tiên)</Label>
+                    <Input 
+                      value={languages.join(', ')} 
+                      onChange={(e) => {
+                        const langs = e.target.value.split(',').map(l => l.trim()).filter(l => l.length > 0)
+                        setLanguages(langs.length > 0 ? langs : ['en-US', 'en'])
+                      }}
+                      placeholder="en-US, en, fr-FR"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">Danh sách ngôn ngữ, cách nhau bởi dấu phẩy (ví dụ: en-US, en, fr-FR)</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Primary Language (Ngôn ngữ chính)</Label>
+                    <Input 
+                      value={language} 
+                      onChange={(e) => setLanguage(e.target.value)}
+                      placeholder="en-US"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">Ngôn ngữ chính (ví dụ: en-US, vi-VN, fr-FR)</p>
+                  </div>
+                </div>
+
+                {/* Timezone */}
+                <div className="space-y-1">
+                  <Label>Timezone (Múi giờ - Châu Âu)</Label>
+                  <select 
+                    value={timezone} 
+                    onChange={(e) => setTimezone(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {EUROPEAN_TIMEZONES.map((tz) => (
+                      <option key={tz.value} value={tz.value}>
+                        {tz.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Múi giờ phải khớp với địa chỉ IP của proxy để trông tự nhiên</p>
                 </div>
               </div>
               <div className="space-y-2">

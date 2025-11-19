@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import { USER_AGENT_LIBRARY } from '../constants/user-agents'
+import { WEBGL_RENDERER_LIBRARY, getWebGLRenderersByOS } from '../constants/webgl-renderers'
 
 /**
  * @typedef {Object} Profile
@@ -50,10 +51,17 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
       screenWidth: 1920,
       screenHeight: 1080,
       canvas: 'Noise',
+      canvasMode: 'Noise',
       clientRects: 'Off',
+      clientRectsMode: 'Off',
       audioContext: 'Off',
+      audioContextMode: 'Off',
       webglImage: 'Off',
+      webglImageMode: 'Off',
       webglMetadata: 'Mask',
+      webglMetaMode: 'Mask',
+      webglRenderer: '',
+      webglVendor: '',
       geoEnabled: false,
       geoMode: 'original',
       webrtcMainIp: false,
@@ -92,10 +100,17 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
         screenWidth: initial.screenWidth || width,
         screenHeight: initial.screenHeight || height,
         canvas: initial.canvas || initial.canvasMode || 'Noise',
+        canvasMode: initial.canvasMode || initial.canvas || 'Noise',
         clientRects: initial.clientRects || initial.clientRectsMode || 'Off',
-        audioContext: initial.audioContext || initial.audioCtxMode || 'Off',
+        clientRectsMode: initial.clientRectsMode || initial.clientRects || 'Off',
+        audioContext: initial.audioContext || initial.audioCtxMode || initial.audioContextMode || 'Off',
+        audioContextMode: initial.audioContextMode || initial.audioCtxMode || initial.audioContext || 'Off',
         webglImage: initial.webglImage || initial.webglImageMode || 'Off',
+        webglImageMode: initial.webglImageMode || initial.webglImage || 'Off',
         webglMetadata: initial.webglMetadata || initial.webglMetaMode || 'Mask',
+        webglMetaMode: initial.webglMetaMode || initial.webglMetadata || 'Mask',
+        webglRenderer: initial.webglRenderer || '',
+        webglVendor: initial.webglVendor || '',
         geoEnabled: initial.geoEnabled || false,
         geoMode: initial.geoMode || 'original',
         webrtcMainIp: initial.webrtcMainIp || initial.webrtcMainIP || false,
@@ -121,16 +136,23 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
         screen: 'Auto',
         screenWidth: 1920,
         screenHeight: 1080,
-        canvas: 'Noise',
-        clientRects: 'Off',
-        audioContext: 'Off',
-        webglImage: 'Off',
-        webglMetadata: 'Mask',
-        geoEnabled: false,
-        geoMode: 'original',
-        webrtcMainIp: false,
-        proxyMode: 'Manual',
-        proxy: { host: '', port: '', username: '', password: '' },
+      canvas: 'Noise',
+      canvasMode: 'Noise',
+      clientRects: 'Off',
+      clientRectsMode: 'Off',
+      audioContext: 'Off',
+      audioContextMode: 'Off',
+      webglImage: 'Off',
+      webglImageMode: 'Off',
+      webglMetadata: 'Mask',
+      webglMetaMode: 'Mask',
+      webglRenderer: '',
+      webglVendor: '',
+      geoEnabled: false,
+      geoMode: 'original',
+      webrtcMainIp: false,
+      proxyMode: 'Manual',
+      proxy: { host: '', port: '', username: '', password: '' },
       })
       setFingerprintJson(''); // Reset fingerprintJson khi tạo mới
       setTimeout(() => setIsInitialLoad(false), 100)
@@ -179,16 +201,161 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     setFingerprintJson(JSON.stringify(generatedObject, null, 2));
   }, [profile, isInitialLoad]); // Chạy mỗi khi state `profile` thay đổi
 
+  // ==========================================================
+  // === HELPER FUNCTIONS: RÀNG BUỘC OS VÀ USER AGENT ===
+  // ==========================================================
+  
+  // Detect OS từ User Agent string
+  const detectOSFromUserAgent = (ua) => {
+    if (!ua) return null;
+    const uaLower = ua.toLowerCase();
+    
+    // Windows
+    if (uaLower.includes('windows nt')) {
+      if (uaLower.includes('windows nt 10.0')) {
+        return uaLower.includes('win64') || uaLower.includes('x64') ? 'Windows 11' : 'Windows 10';
+      }
+      return 'Windows 10';
+    }
+    
+    // macOS
+    if (uaLower.includes('macintosh') || uaLower.includes('mac os x')) {
+      return 'macOS';
+    }
+    
+    // Linux
+    if (uaLower.includes('linux x86_64') || uaLower.includes('x11; linux')) {
+      return 'Linux';
+    }
+    
+    // Android
+    if (uaLower.includes('android')) {
+      return 'Android';
+    }
+    
+    // iOS
+    if (uaLower.includes('iphone') || uaLower.includes('ipad') || uaLower.includes('cpu iphone os')) {
+      return 'iOS';
+    }
+    
+    return null;
+  };
+
+  // Normalize OS name để so sánh
+  const normalizeOS = (os) => {
+    if (!os) return null;
+    const osLower = os.toLowerCase();
+    if (osLower.includes('windows')) return 'Windows';
+    if (osLower.includes('mac') || osLower.includes('macos')) return 'macOS';
+    if (osLower.includes('linux')) return 'Linux';
+    if (osLower.includes('android')) return 'Android';
+    if (osLower.includes('ios')) return 'iOS';
+    return os;
+  };
+
+  // Filter User Agents theo OS
+  const getUserAgentsByOS = (os) => {
+    if (!os) return USER_AGENT_LIBRARY;
+    const normalizedOS = normalizeOS(os);
+    if (!normalizedOS) return USER_AGENT_LIBRARY;
+    
+    return USER_AGENT_LIBRARY.filter(agent => {
+      const agentOS = normalizeOS(agent.os);
+      return agentOS === normalizedOS;
+    });
+  };
+
+  // Kiểm tra User Agent có khớp với OS không
+  const isUserAgentCompatibleWithOS = (ua, os) => {
+    if (!ua || !os) return true; // Nếu thiếu thông tin, cho phép
+    const detectedOS = detectOSFromUserAgent(ua);
+    if (!detectedOS) return true; // Nếu không detect được, cho phép
+    
+    const normalizedDetected = normalizeOS(detectedOS);
+    const normalizedOS = normalizeOS(os);
+    
+    return normalizedDetected === normalizedOS;
+  };
+
   // --- HÀM CẬP NHẬT TỪ CÁC DROPDOWN ---
   const handleUserAgentChange = (e) => {
-    const selectedAgent = USER_AGENT_LIBRARY.find(agent => agent.value === e.target.value);
+    const selectedValue = e.target.value;
+    
+    // Nếu chọn từ dropdown (có trong thư viện)
+    const selectedAgent = USER_AGENT_LIBRARY.find(agent => agent.value === selectedValue);
     if (selectedAgent) {
+      const newOS = selectedAgent.os;
+      // Lấy WebGL Renderer ngẫu nhiên từ OS mới
+      const compatibleGPUs = getWebGLRenderersByOS(newOS);
+      const randomGPU = compatibleGPUs.length > 0 
+        ? compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)]
+        : null;
+      
       setProfile(prev => ({
         ...prev,
         userAgent: selectedAgent.value,
-        os: selectedAgent.os,
+        os: newOS, // Tự động cập nhật OS từ User Agent
+        webglRenderer: randomGPU ? randomGPU.renderer : prev.webglRenderer,
+        webglVendor: randomGPU ? randomGPU.vendor : prev.webglVendor,
+      }));
+      return;
+    }
+    
+    // Nếu nhập thủ công, tự động detect OS
+    const detectedOS = detectOSFromUserAgent(selectedValue);
+    if (detectedOS) {
+      // Lấy WebGL Renderer ngẫu nhiên từ OS đã detect
+      const compatibleGPUs = getWebGLRenderersByOS(detectedOS);
+      const randomGPU = compatibleGPUs.length > 0 
+        ? compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)]
+        : null;
+      
+      setProfile(prev => ({
+        ...prev,
+        userAgent: selectedValue,
+        os: detectedOS, // Tự động cập nhật OS từ User Agent
+        webglRenderer: randomGPU ? randomGPU.renderer : prev.webglRenderer,
+        webglVendor: randomGPU ? randomGPU.vendor : prev.webglVendor,
+      }));
+    } else {
+      // Nếu không detect được, chỉ cập nhật User Agent
+      setProfile(prev => ({
+        ...prev,
+        userAgent: selectedValue,
       }));
     }
+  };
+
+  // Hàm xử lý khi thay đổi OS
+  const handleOSChange = (e) => {
+    const newOS = e.target.value;
+    
+    setProfile(prev => {
+      // Kiểm tra User Agent hiện tại có khớp với OS mới không
+      const isCompatible = isUserAgentCompatibleWithOS(prev.userAgent, newOS);
+      
+      // Lấy User Agent ngẫu nhiên từ OS mới (nếu không khớp hoặc chưa có)
+      const compatibleAgents = getUserAgentsByOS(newOS);
+      const randomAgent = compatibleAgents.length > 0 
+        ? compatibleAgents[Math.floor(Math.random() * compatibleAgents.length)]
+        : null;
+      
+      // Lấy WebGL Renderer ngẫu nhiên từ OS mới
+      const compatibleGPUs = getWebGLRenderersByOS(newOS);
+      const randomGPU = compatibleGPUs.length > 0 
+        ? compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)]
+        : null;
+      
+      return {
+        ...prev,
+        os: newOS,
+        // Tự động cập nhật User Agent nếu không khớp hoặc chưa có
+        userAgent: (!isCompatible || !prev.userAgent) && randomAgent ? randomAgent.value : prev.userAgent,
+        // Tự động cập nhật WebGL Renderer
+        webglRenderer: randomGPU ? randomGPU.renderer : prev.webglRenderer,
+        webglVendor: randomGPU ? randomGPU.vendor : prev.webglVendor,
+      };
+    });
   };
 
   const handleScreenResolutionChange = (e) => {
@@ -235,8 +402,21 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
 
   // --- HÀM RANDOMIZE ALL ---
   const handleRandomizeAll = () => {
-    // Lấy ngẫu nhiên một user agent từ thư viện
-    const randomAgent = USER_AGENT_LIBRARY[Math.floor(Math.random() * USER_AGENT_LIBRARY.length)];
+    // Random OS trước (CHỈ Windows hoặc macOS)
+    const osOptions = ['Windows', 'Windows 10', 'Windows 11', 'macOS'];
+    const randomOS = osOptions[Math.floor(Math.random() * osOptions.length)];
+    
+    // Lấy User Agent ngẫu nhiên từ OS đã chọn (ĐẢM BẢO RÀNG BUỘC)
+    const compatibleAgents = getUserAgentsByOS(randomOS);
+    const randomAgent = compatibleAgents.length > 0 
+      ? compatibleAgents[Math.floor(Math.random() * compatibleAgents.length)]
+      : USER_AGENT_LIBRARY[0];
+    
+    // Lấy WebGL Renderer ngẫu nhiên từ OS đã chọn (ĐẢM BẢO RÀNG BUỘC)
+    const compatibleGPUs = getWebGLRenderersByOS(randomOS);
+    const randomGPU = compatibleGPUs.length > 0 
+      ? compatibleGPUs[Math.floor(Math.random() * compatibleGPUs.length)]
+      : null;
     
     // Lấy ngẫu nhiên một độ phân giải
     const resolutions = [
@@ -249,22 +429,29 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
 
     // Randomize các trường fingerprint
     const canvasModes = ['Noise', 'Off', 'Block'];
-    const offNoiseModes = ['Off', 'Noise'];
-    const webglMetaModes = ['Mask', 'Real'];
+    const offNoiseModes = ['Noise', 'Off']; // Noise đứng đầu
+    const webglMetaModes = ['Mask', 'Real']; // Mask đứng đầu
 
     // Cập nhật TOÀN BỘ state cùng lúc
     setProfile(prev => ({
       ...prev,
       userAgent: randomAgent.value,
-      os: randomAgent.os,
+      os: randomOS, // Sử dụng OS đã random (ĐẢM BẢO RÀNG BUỘC)
+      webglRenderer: randomGPU ? randomGPU.renderer : prev.webglRenderer,
+      webglVendor: randomGPU ? randomGPU.vendor : prev.webglVendor,
       screenWidth: randomRes.w,
       screenHeight: randomRes.h,
       screen: `${randomRes.w}x${randomRes.h}`,
       canvas: canvasModes[Math.floor(Math.random() * canvasModes.length)],
+      canvasMode: canvasModes[Math.floor(Math.random() * canvasModes.length)],
       clientRects: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
+      clientRectsMode: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
       audioContext: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
+      audioContextMode: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
       webglImage: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
+      webglImageMode: offNoiseModes[Math.floor(Math.random() * offNoiseModes.length)],
       webglMetadata: webglMetaModes[Math.floor(Math.random() * webglMetaModes.length)],
+      webglMetaMode: webglMetaModes[Math.floor(Math.random() * webglMetaModes.length)],
       geoEnabled: Math.random() > 0.5,
       webrtcMainIp: Math.random() > 0.5,
     }));
@@ -360,45 +547,111 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     }
   }
 
-  // --- HÀM SUBMIT ---
+  // ==========================================================
+  // === HÀM SUBMIT KHÔNG NGU - LẤY TỪ NGUỒN CHÂN LÝ DUY NHẤT ===
+  // ==========================================================
   const handleSubmit = (e) => {
     e.preventDefault()
-    
-    // Parse fingerprintJson nếu có (cho phép user paste JSON vào)
-    let finalFingerprint = null;
-    try {
-      finalFingerprint = JSON.parse(fingerprintJson);
-    } catch (error) {
-      // Nếu parse lỗi, tạo từ profile state
-      finalFingerprint = {
-        userAgent: profile.userAgent,
-        user_agent: profile.userAgent,
-        os: profile.os,
-        osName: profile.os,
-        viewport: {
-          width: profile.screenWidth,
-          height: profile.screenHeight,
-        },
-        screenWidth: profile.screenWidth,
-        screenHeight: profile.screenHeight,
-        canvasMode: profile.canvas,
-        clientRectsMode: profile.clientRects,
-        audioCtxMode: profile.audioContext,
-        webglImageMode: profile.webglImage,
-        webglMetaMode: profile.webglMetadata,
-        geoEnabled: profile.geoEnabled,
-        webrtcMainIP: profile.webrtcMainIp,
-      };
+
+    // ==========================================================
+    // === VALIDATION: KIỂM TRA RÀNG BUỘC OS VÀ USER AGENT ===
+    // ==========================================================
+    if (profile.userAgent && profile.os) {
+      const isCompatible = isUserAgentCompatibleWithOS(profile.userAgent, profile.os);
+      if (!isCompatible) {
+        const detectedOS = detectOSFromUserAgent(profile.userAgent);
+        if (detectedOS) {
+          alert(`⚠️ Cảnh báo: User Agent không khớp với OS đã chọn!\n\nUser Agent phát hiện OS: ${detectedOS}\nOS đã chọn: ${profile.os}\n\nHệ thống sẽ tự động điều chỉnh OS thành ${detectedOS}.`);
+          setProfile(prev => ({
+            ...prev,
+            os: detectedOS, // Tự động điều chỉnh OS
+          }));
+          return; // Dừng submit để user xác nhận
+        } else {
+          // Nếu không detect được OS từ User Agent, random một User Agent từ OS đã chọn
+          const compatibleAgents = getUserAgentsByOS(profile.os);
+          if (compatibleAgents.length > 0) {
+            const randomAgent = compatibleAgents[Math.floor(Math.random() * compatibleAgents.length)];
+            alert(`⚠️ Cảnh báo: User Agent không khớp với OS đã chọn!\n\nHệ thống sẽ tự động thay đổi User Agent thành một User Agent tương thích với ${profile.os}.`);
+            setProfile(prev => ({
+              ...prev,
+              userAgent: randomAgent.value, // Tự động điều chỉnh User Agent
+            }));
+            return; // Dừng submit để user xác nhận
+          }
+        }
+      }
     }
 
+    // ==========================================================
+    // === ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT ===
+    // ==========================================================
+    // Chúng ta sẽ KHÔNG đọc từ ô JSON.
+    // Chúng ta sẽ tạo ra một object sạch sẽ DUY NHẤT từ state 'profile',
+    // là nguồn chân lý duy nhất.
+
     const dataToSend = {
-      ...profile,
+      name: profile.name,
+      userAgent: profile.userAgent,
+      user_agent: profile.userAgent,
+      os: profile.os,
+      osName: profile.os,
+      arch: profile.arch,
+      browser: profile.browser,
+      screen: profile.screen,
+      screenWidth: profile.screenWidth,
+      screenHeight: profile.screenHeight,
+      canvas: profile.canvas || profile.canvasMode,
+      canvasMode: profile.canvasMode || profile.canvas,
+      clientRects: profile.clientRects || profile.clientRectsMode,
+      clientRectsMode: profile.clientRectsMode || profile.clientRects,
+      audioContext: profile.audioContext || profile.audioContextMode,
+      audioCtxMode: profile.audioContextMode || profile.audioContext,
+      webglImage: profile.webglImage || profile.webglImageMode,
+      webglImageMode: profile.webglImageMode || profile.webglImage,
+      webglMetadata: profile.webglMetadata || profile.webglMetaMode,
+      webglMetaMode: profile.webglMetaMode || profile.webglMetadata,
+      webglRenderer: profile.webglRenderer,
+      webglVendor: profile.webglVendor,
+      geoEnabled: profile.geoEnabled,
+      geoMode: profile.geoMode,
+      webrtcMainIp: profile.webrtcMainIp,
+      webrtcMainIP: profile.webrtcMainIp,
+      proxyMode: profile.proxyMode,
+      proxy: profile.proxy,
       id: initial?.id,
-      fingerprint: finalFingerprint,
-      fingerprintJson: fingerprintJson || JSON.stringify(finalFingerprint, null, 2),
     };
 
-    console.log("Dữ liệu gửi đi:", dataToSend);
+    // Chỉ khi gửi đi, chúng ta mới tạo ra trường fingerprintJson
+    // nếu backend của ông cần nó.
+    const finalFingerprintObject = {
+      userAgent: profile.userAgent,
+      user_agent: profile.userAgent,
+      os: profile.os,
+      osName: profile.os,
+      viewport: {
+        width: profile.screenWidth,
+        height: profile.screenHeight,
+      },
+      screenWidth: profile.screenWidth,
+      screenHeight: profile.screenHeight,
+      canvasMode: profile.canvas || profile.canvasMode,
+      clientRectsMode: profile.clientRects || profile.clientRectsMode,
+      audioCtxMode: profile.audioContext || profile.audioContextMode,
+      webglImageMode: profile.webglImage || profile.webglImageMode,
+      webglMetaMode: profile.webglMetadata || profile.webglMetaMode,
+      webglRenderer: profile.webglRenderer,
+      webglVendor: profile.webglVendor,
+      geoEnabled: profile.geoEnabled,
+      webrtcMainIP: profile.webrtcMainIp,
+    };
+
+    dataToSend.fingerprint = finalFingerprintObject;
+    dataToSend.fingerprintJson = JSON.stringify(finalFingerprintObject, null, 2);
+
+    console.log("DỮ LIỆU CUỐI CÙNG SẼ ĐƯỢC GỬI ĐẾN BACKEND:", dataToSend);
+
+    // Bây giờ mới gọi API để lưu
     onUpdate(dataToSend);
   }
 
@@ -465,7 +718,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- Chọn từ thư viện hoặc nhập thủ công --</option>
-                    {USER_AGENT_LIBRARY.map(agent => (
+                    {/* Filter User Agents theo OS đã chọn */}
+                    {getUserAgentsByOS(profile.os).map(agent => (
                       <option key={agent.name} value={agent.value}>
                         {agent.name}
                       </option>
@@ -523,29 +777,16 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                   {/* Vẫn cho phép chọn thủ công nếu cần */}
                   <select
                     id="profile-os-select"
-                    value={profile.os}
-                    onChange={(e) => {
-                      const newOs = e.target.value
-                      setProfile((prev) => ({
-                        ...prev,
-                        os: newOs,
-                        userAgent: newOs !== prev.os && newOs ? '' : prev.userAgent
-                      }))
-                    }}
+                    value={profile.os || ''}
+                    onChange={handleOSChange}
                     className="w-full mt-2 px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     aria-label="OS Select"
                   >
-                    <option value="">Hoặc chọn OS thủ công</option>
+                    <option value="">Hoặc chọn OS thủ công (sẽ random User Agent và WebGL Renderer tương ứng)</option>
+                    <option value="Windows">Windows</option>
                     <option value="Windows 10">Windows 10</option>
                     <option value="Windows 11">Windows 11</option>
                     <option value="macOS">macOS</option>
-                    <option value="macOS M1">macOS M1</option>
-                    <option value="macOS M2">macOS M2</option>
-                    <option value="macOS M3">macOS M3</option>
-                    <option value="macOS M4">macOS M4</option>
-                    <option value="Linux">Linux</option>
-                    <option value="Android">Android</option>
-                    <option value="iOS">iOS</option>
                   </select>
                 </div>
 
@@ -652,83 +893,269 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
                 </p>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div role="radiogroup" aria-label="Canvas">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
-                    Canvas
-                  </label>
-                  <select
-                    value={profile.canvas}
-                    onChange={(e) => handleFieldChange('canvas', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    aria-label="Canvas"
+              {/* Canvas */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-2">
+                  Canvas
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('canvas', 'Noise');
+                      handleFieldChange('canvasMode', 'Noise');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.canvas || profile.canvasMode) === 'Noise'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
                   >
-                    <option value="Noise">Noise</option>
-                    <option value="Off">Off</option>
-                    <option value="Block">Block</option>
-                  </select>
-                </div>
-
-                <div role="radiogroup" aria-label="Client Rects">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
-                    Client Rects
-                  </label>
-                  <select
-                    value={profile.clientRects}
-                    onChange={(e) => handleFieldChange('clientRects', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    aria-label="Client Rects"
+                    Noise
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('canvas', 'Off');
+                      handleFieldChange('canvasMode', 'Off');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.canvas || profile.canvasMode) === 'Off'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
                   >
-                    <option value="Off">Off</option>
-                    <option value="Noise">Noise</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div role="radiogroup" aria-label="Audio Context">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
-                    Audio Context
-                  </label>
-                  <select
-                    value={profile.audioContext}
-                    onChange={(e) => handleFieldChange('audioContext', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    aria-label="Audio Context"
+                    Off
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('canvas', 'Block');
+                      handleFieldChange('canvasMode', 'Block');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.canvas || profile.canvasMode) === 'Block'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
                   >
-                    <option value="Off">Off</option>
-                    <option value="Noise">Noise</option>
-                  </select>
-                </div>
-
-                <div role="radiogroup" aria-label="WebGL Image">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
-                    WebGL Image
-                  </label>
-                  <select
-                    value={profile.webglImage}
-                    onChange={(e) => handleFieldChange('webglImage', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    aria-label="WebGL Image"
-                  >
-                    <option value="Off">Off</option>
-                    <option value="Noise">Noise</option>
-                  </select>
+                    Block
+                  </button>
                 </div>
               </div>
 
-              <div role="radiogroup" aria-label="WebGL Metadata">
-                <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
+              {/* Client Rects */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-2">
+                  Client Rects
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('clientRects', 'Noise');
+                      handleFieldChange('clientRectsMode', 'Noise');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.clientRects || profile.clientRectsMode) === 'Noise'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Noise
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('clientRects', 'Off');
+                      handleFieldChange('clientRectsMode', 'Off');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.clientRects || profile.clientRectsMode) === 'Off'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Off
+                  </button>
+                </div>
+              </div>
+
+              {/* Audio Context */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-2">
+                  Audio Context
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('audioContext', 'Noise');
+                      handleFieldChange('audioContextMode', 'Noise');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.audioContext || profile.audioContextMode) === 'Noise'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Noise
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('audioContext', 'Off');
+                      handleFieldChange('audioContextMode', 'Off');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.audioContext || profile.audioContextMode) === 'Off'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Off
+                  </button>
+                </div>
+              </div>
+
+              {/* WebGL Image */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-2">
+                  WebGL Image
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('webglImage', 'Noise');
+                      handleFieldChange('webglImageMode', 'Noise');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.webglImage || profile.webglImageMode) === 'Noise'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Noise
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('webglImage', 'Off');
+                      handleFieldChange('webglImageMode', 'Off');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.webglImage || profile.webglImageMode) === 'Off'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Off
+                  </button>
+                </div>
+              </div>
+
+              {/* WebGL Metadata */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-foreground mb-2">
                   WebGL Metadata
                 </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('webglMetadata', 'Mask');
+                      handleFieldChange('webglMetaMode', 'Mask');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.webglMetadata || profile.webglMetaMode) === 'Mask'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Mask
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFieldChange('webglMetadata', 'Real');
+                      handleFieldChange('webglMetaMode', 'Real');
+                    }}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      (profile.webglMetadata || profile.webglMetaMode) === 'Real'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-white dark:bg-[#0f0f0f] text-gray-700 dark:text-foreground border border-gray-300 dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]'
+                    }`}
+                  >
+                    Real
+                  </button>
+                </div>
+              </div>
+
+              {/* WebGL Vendor */}
+              <div>
+                <label htmlFor="webgl-vendor" className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
+                  WebGL Vendor
+                </label>
                 <select
-                  value={profile.webglMetadata}
-                  onChange={(e) => handleFieldChange('webglMetadata', e.target.value)}
+                  id="webgl-vendor"
+                  value={profile.webglVendor || ''}
+                  onChange={(e) => {
+                    const selectedVendor = e.target.value;
+                    // Tìm renderer tương ứng với vendor này
+                    const compatibleGPUs = getWebGLRenderersByOS(profile.os || 'Windows');
+                    const matchingGPU = compatibleGPUs.find(gpu => gpu.vendor === selectedVendor);
+                    setProfile(prev => ({
+                      ...prev,
+                      webglVendor: selectedVendor,
+                      webglRenderer: matchingGPU ? matchingGPU.renderer : prev.webglRenderer,
+                    }));
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  aria-label="WebGL Metadata"
                 >
-                  <option value="Mask">Mask</option>
-                  <option value="Real">Real</option>
+                  <option value="">-- Chọn WebGL Vendor --</option>
+                  {(() => {
+                    const compatibleGPUs = getWebGLRenderersByOS(profile.os || 'Windows');
+                    const uniqueVendors = [...new Set(compatibleGPUs.map(gpu => gpu.vendor))];
+                    return uniqueVendors.map(vendor => (
+                      <option key={vendor} value={vendor}>{vendor}</option>
+                    ));
+                  })()}
+                </select>
+              </div>
+
+              {/* WebGL Renderer */}
+              <div>
+                <label htmlFor="webgl-renderer" className="block text-sm font-medium text-gray-700 dark:text-foreground mb-1">
+                  WebGL Renderer
+                </label>
+                <select
+                  id="webgl-renderer"
+                  value={profile.webglRenderer || ''}
+                  onChange={(e) => {
+                    const selectedRenderer = e.target.value;
+                    const compatibleGPUs = getWebGLRenderersByOS(profile.os || 'Windows');
+                    const matchingGPU = compatibleGPUs.find(gpu => gpu.renderer === selectedRenderer);
+                    setProfile(prev => ({
+                      ...prev,
+                      webglRenderer: selectedRenderer,
+                      webglVendor: matchingGPU ? matchingGPU.vendor : prev.webglVendor,
+                    }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-[#2a2a2a] rounded-md bg-white dark:bg-[#0f0f0f] text-gray-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Chọn WebGL Renderer --</option>
+                  {(() => {
+                    const compatibleGPUs = getWebGLRenderersByOS(profile.os || 'Windows');
+                    const filteredGPUs = profile.webglVendor
+                      ? compatibleGPUs.filter(gpu => gpu.vendor === profile.webglVendor)
+                      : compatibleGPUs;
+                    return filteredGPUs.map((gpu, idx) => (
+                      <option key={idx} value={gpu.renderer}>
+                        {gpu.vendor} - {gpu.renderer.substring(0, 80)}...
+                      </option>
+                    ));
+                  })()}
                 </select>
               </div>
             </div>

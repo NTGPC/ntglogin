@@ -24,41 +24,65 @@ model User {
 
 // Profile model - browser profiles
 model Profile {
-  id             Int          @id @default(autoincrement())
-  name           String
-  user_agent     String?
-  fingerprint    Json?
-  fingerprintId  Int?
-  fingerprintRef Fingerprint? @relation(fields: [fingerprintId], references: [id])
-  created_at     DateTime     @default(now())
+  id          Int      @id @default(autoincrement())
+  name        String
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  // Extended fingerprint/config fields (all optional for backward compatibility)
-  userAgent           String?  @unique
-  osName              String?
-  osArch              String? // "x86" | "x64" | "arm"
-  browserVersion      Int?
-  screenWidth         Int?
-  screenHeight        Int?
-  canvasMode          String? // "Noise" | "Block" | "Off"
-  clientRectsMode     String? // "Noise" | "Off"
-  audioCtxMode        String? // "Noise" | "Off"
-  webglImageMode      String? // "Noise" | "Off"
-  webglMetaMode       String? // "Mask" | "Real"
-  geoEnabled          Boolean?
-  geoLatitude         Float?
-  geoLongitude        Float?
-  webrtcMainIP        Boolean?
-  proxyRefId          String?
-  proxyManual         Json?
-  macAddress          String?  @unique
-  fingerprintJson     Json?
-  timezoneId          String? // e.g., "America/Los_Angeles", "Asia/Ho_Chi_Minh"
-  language            String? // e.g., "en-US", "vi-VN"
-  hardwareConcurrency Int? // CPU cores (4-8 typical)
-  deviceMemory        Int? // RAM in GB (4-16 typical)
+  // === NAVIGATOR - Thông tin trình duyệt và hệ điều hành ===
+  userAgent           String?  @unique // User Agent string (unique when provided)
+  platform            String   @default("Win32") // "Win32" | "MacIntel" | "Linux x86_64"
+  hardwareConcurrency Int      @default(8) // CPU cores (2-32 typical)
+  deviceMemory        Int      @default(8) // RAM in GB (2-64 typical)
+  languages           String[] @default(["en-US", "en"]) // Array of language codes
 
-  workflowId  Int?      // ID của workflow được gán, có thể là null
-  workflow    Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  // === HARDWARE - Canvas, WebGL, Audio fingerprinting ===
+  canvasMode          String   @default("noise") // "noise" | "off" | "block"
+  clientRectsMode     String?  // "noise" | "off" (optional, for backward compatibility)
+  webglRenderer       String?  // WebGL renderer string (e.g., "Intel Iris OpenGL Engine")
+  webglVendor         String?  // WebGL vendor string (e.g., "Intel Inc.")
+  webglImageMode      String?  // "noise" | "off" (optional, for backward compatibility)
+  webglMetaMode       String?  // "mask" | "real" (optional, for backward compatibility)
+  audioContextMode    String   @default("noise") // "noise" | "off"
+
+  // === NETWORK - WebRTC, Geolocation ===
+  webrtcMode          String   @default("fake") // "fake" | "off"
+  webrtcMainIP        Boolean? @default(false) // Deprecated: use webrtcMode instead
+  geolocationMode     String   @default("fake") // "fake" | "off"
+  geolocationEnabled  Boolean? // Deprecated: use geolocationMode instead
+  geolocationLat      Float?  // Latitude (-90 to 90)
+  geolocationLon      Float?  // Longitude (-180 to 180)
+
+  // === LOCALIZATION & OTHER ===
+  timezone            String?  // Timezone ID (e.g., "Asia/Bangkok", "America/Los_Angeles")
+  timezoneId          String?  // Deprecated: use timezone instead
+  language            String?  // Primary language (e.g., "en-US", "vi-VN")
+  macAddress          String?  @unique // MAC address (unique)
+
+  // === SCREEN RESOLUTION ===
+  screenWidth         Int?     // Screen width in pixels
+  screenHeight        Int?     // Screen height in pixels
+  osName              String?  // OS name (e.g., "Windows 10", "macOS", "Linux")
+  os                  String?  // Deprecated: use osName instead
+  osArch              String?  // OS architecture: "x86" | "x64" | "arm"
+  browserVersion      Int?     // Browser version number
+
+  // === BACKWARD COMPATIBILITY - Các trường cũ để tương thích ===
+  user_agent         String?  // Deprecated: use userAgent instead
+  fingerprint        Json?     // Legacy fingerprint JSON
+  fingerprintId      Int?
+  fingerprintRef     Fingerprint? @relation(fields: [fingerprintId], references: [id])
+  fingerprintJson    Json?     // Legacy fingerprint JSON string
+  proxyRefId         String?   // Deprecated: use proxyId instead
+  proxyManual        Json?     // Deprecated: use proxy relation instead
+
+  // === RELATIONS ===
+  proxyId    Int?
+  proxy      Proxy?   @relation(fields: [proxyId], references: [id], onDelete: SetNull)
+  
+  workflowId Int?
+  workflow   Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
   
   sessions    Session[]
   executions  JobExecution[]
@@ -66,6 +90,7 @@ model Profile {
 
   @@index([name])
   @@index([workflowId])
+  @@index([userAgent])
   @@map("profiles")
 }
 
@@ -89,10 +114,12 @@ model Proxy {
   port       Int
   username   String?
   password   String?
-  type       String // "http", "socks5"
+  type       String   @default("http") // "http" | "socks5" | "socks4"
   active     Boolean  @default(true)
-  created_at DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
+  profiles Profile[] // Một proxy có thể được gán cho nhiều profile
   sessions Session[]
 
   @@index([active])

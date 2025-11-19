@@ -15,6 +15,10 @@ browser_profiles/
 # Database backups - không nên commit lên git
 database_backups/
 *.sql
+*.db
+*.db-journal
+backup*.sql
+database_backup*.sql
 *.zip
 !prisma/migrations/**/*.sql
 

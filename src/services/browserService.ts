@@ -23,6 +23,278 @@ const injectionScriptTemplatePath = path.join(process.cwd(), 'core', 'injection_
 const fingerprintPatchScript = fs.readFileSync(fingerprintPatchPath, 'utf-8');
 const audioSpoofScript = fs.readFileSync(audioSpoofPath, 'utf-8');
 
+// ==========================================================
+// === HÀM MỚI: launchProfileWithFingerprint ===
+// === TRÁI TIM MỚI CỦA HỆ THỐNG ===
+// ==========================================================
+/**
+ * Khởi chạy trình duyệt với fingerprint từ schema mới
+ * Đọc cấu trúc fingerprint mới và tiêm "bộ não" vào trình duyệt
+ * 
+ * @param profile - Profile object từ database với cấu trúc mới
+ * @returns BrowserContext từ Playwright
+ */
+export async function launchProfileWithFingerprint(profile: any) {
+  console.log(`[LIFECYCLE] Nhận yêu cầu khởi chạy cho profile: ${profile.name} (ID: ${profile.id})`);
+
+  // ==========================================================
+  // === BƯỚC 1: TẠO MÔI TRƯỜNG LƯU TRỮ RIÊNG BIỆT ===
+  // ==========================================================
+  // Định dạng tên thư mục mới: {profile.id}-PROFILE{profile.id}
+  const profileIdStr = String(profile.id).padStart(6, '0');
+  const profileDirName = `${profile.id}-PROFILE${profileIdStr}`;
+  const profilePath = path.join(process.cwd(), 'browser_profiles', profileDirName);
+  
+  if (!fs.existsSync(profilePath)) {
+    fs.mkdirSync(profilePath, { recursive: true });
+    console.log(`[LIFECYCLE] ✅ Đã tạo thư mục profile: ${profilePath}`);
+  } else {
+    console.log(`[LIFECYCLE] ✅ Sử dụng thư mục profile hiện có: ${profilePath}`);
+  }
+
+  // ==========================================================
+  // === BƯỚC 2: ĐỌC VÀ CHUẨN BỊ SCRIPT TIÊM ===
+  // ==========================================================
+  // Ưu tiên sử dụng file mới, fallback về file cũ
+  const injectionScriptPathNew = path.join(process.cwd(), 'src', 'scripts', 'injection_script.js');
+  const injectionScriptPathOld = path.join(process.cwd(), 'core', 'injection_script.js');
+  
+  let injectionScriptPath = injectionScriptPathNew;
+  if (!fs.existsSync(injectionScriptPath)) {
+    injectionScriptPath = injectionScriptPathOld;
+    if (!fs.existsSync(injectionScriptPath)) {
+      throw new Error(`[LIFECYCLE] ❌ Không tìm thấy injection script tại: ${injectionScriptPathNew} hoặc ${injectionScriptPathOld}`);
+    }
+  }
+
+  let injectionScript = fs.readFileSync(injectionScriptPath, 'utf-8');
+  const useNewFormat = injectionScriptPath === injectionScriptPathNew;
+  console.log(`[LIFECYCLE] ✅ Đã đọc injection script từ: ${injectionScriptPath} (Format: ${useNewFormat ? 'MỚI' : 'CŨ'})`);
+
+  // ==========================================================
+  // === BƯỚC 3: THAY THẾ CÁC PLACEHOLDER BẰNG GIÁ TRỊ TỪ DB ===
+  // ==========================================================
+  // Lấy giá trị từ profile (theo schema mới)
+  const userAgent = profile.userAgent || profile.user_agent || '';
+  const platform = profile.platform || 'Win32';
+  const hardwareConcurrency = profile.hardwareConcurrency || 8;
+  const deviceMemory = profile.deviceMemory || 8;
+  const languages = profile.languages || ['en-US', 'en'];
+  const language = profile.language || languages[0] || 'en-US';
+  
+  // Screen resolution
+  const screenWidth = profile.screenWidth || 1920;
+  const screenHeight = profile.screenHeight || 1080;
+  const screenAvailWidth = screenWidth;
+  const screenAvailHeight = screenHeight - 40; // Trừ đi thanh taskbar
+  
+  // WebGL
+  const webglVendor = profile.webglVendor || 'Intel Inc.';
+  const webglRenderer = profile.webglRenderer || 'Intel Iris OpenGL Engine';
+  
+  // Canvas, Audio, ClientRects
+  const canvasMode = profile.canvasMode || profile.canvas || 'noise';
+  const audioContextMode = profile.audioContextMode || profile.audioCtxMode || profile.audioContext || 'noise';
+  const clientRectsMode = profile.clientRectsMode || profile.clientRects || 'off';
+  
+  // Geolocation
+  const geoEnabled = profile.geolocationMode === 'fake' || profile.geoEnabled || false;
+  const geoLat = profile.geolocationLat || 10.762622; // Default: Ho Chi Minh City
+  const geoLon = profile.geolocationLon || 106.660172;
+  
+  // WebRTC
+  const webrtcUseMainIP = profile.webrtcMode === 'fake' || profile.webrtcMainIP || false;
+  
+  // Timezone
+  const timezone = profile.timezone || profile.timezoneId || 'Asia/Bangkok';
+  
+  // Seed (sử dụng profile ID để đảm bảo tính nhất quán)
+  const seed = profile.id || 12345;
+
+  // Chuẩn bị languages array string
+  const languagesStr = '[' + languages.map((l: string) => `'${l}'`).join(', ') + ']';
+
+  // Thay thế các placeholder (hỗ trợ cả format mới __PLACEHOLDER__ và format cũ %%PLACEHOLDER%%)
+  const replacements: Record<string, string> = {
+    // Format mới (__PLACEHOLDER__)
+    '__USER_AGENT__': userAgent,
+    '__PLATFORM__': platform,
+    '__HARDWARE_CONCURRENCY__': String(hardwareConcurrency),
+    '__DEVICE_MEMORY__': String(deviceMemory),
+    '__LANGUAGES__': languagesStr,
+    '__LANGUAGE__': language,
+    '__SCREEN_WIDTH__': String(screenWidth),
+    '__SCREEN_HEIGHT__': String(screenHeight),
+    '__SCREEN_AVAIL_WIDTH__': String(screenAvailWidth),
+    '__SCREEN_AVAIL_HEIGHT__': String(screenAvailHeight),
+    '__SCREEN_COLOR_DEPTH__': String(24),
+    '__SCREEN_PIXEL_DEPTH__': String(24),
+    '__DEVICE_PIXEL_RATIO__': String(1),
+    '__WEBGL_VENDOR__': webglVendor,
+    '__WEBGL_RENDERER__': webglRenderer,
+    '__CANVAS_MODE__': canvasMode,
+    '__CANVAS_SEED__': String(seed),
+    '__AUDIO_CONTEXT_MODE__': audioContextMode,
+    '__AUDIO_SEED__': String(seed),
+    '__CLIENT_RECTS_MODE__': clientRectsMode,
+    '__GEO_ENABLED__': String(geoEnabled),
+    '__GEO_LAT__': String(geoLat),
+    '__GEO_LON__': String(geoLon),
+    '__WEBRTC_USE_MAIN_IP__': String(webrtcUseMainIP),
+    '__TIMEZONE__': timezone,
+    '__SEED__': String(seed),
+    
+    // Format cũ (%%PLACEHOLDER%%) - để tương thích ngược
+    '%%HARDWARE_CONCURRENCY%%': JSON.stringify(hardwareConcurrency),
+    '%%DEVICE_MEMORY%%': JSON.stringify(deviceMemory),
+    '%%LANGUAGES%%': languagesStr,
+    '%%LANGUAGE%%': language,
+    '%%SCREEN_WIDTH%%': JSON.stringify(screenWidth),
+    '%%SCREEN_HEIGHT%%': JSON.stringify(screenHeight),
+    '%%SCREEN_AVAIL_WIDTH%%': JSON.stringify(screenAvailWidth),
+    '%%SCREEN_AVAIL_HEIGHT%%': JSON.stringify(screenAvailHeight),
+    '%%SCREEN_COLOR_DEPTH%%': JSON.stringify(24),
+    '%%SCREEN_PIXEL_DEPTH%%': JSON.stringify(24),
+    '%%DEVICE_PIXEL_RATIO%%': JSON.stringify(1),
+    '%%WEBGL_VENDOR%%': webglVendor,
+    '%%WEBGL_RENDERER%%': webglRenderer,
+    '%%CANVAS_MODE%%': canvasMode,
+    '%%CANVAS_SEED%%': String(seed),
+    '%%AUDIO_CONTEXT_MODE%%': audioContextMode,
+    '%%AUDIO_SEED%%': String(seed),
+    '%%CLIENT_RECTS_MODE%%': clientRectsMode,
+    '%%GEO_ENABLED%%': JSON.stringify(geoEnabled),
+    '%%GEO_LAT%%': JSON.stringify(geoLat),
+    '%%GEO_LON%%': JSON.stringify(geoLon),
+    '%%WEBRTC_USE_MAIN_IP%%': JSON.stringify(webrtcUseMainIP),
+    '%%TIMEZONE%%': timezone,
+    '%%SEED%%': String(seed),
+  };
+
+  // Thực hiện thay thế
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    injectionScript = injectionScript.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+  }
+
+  console.log(`[LIFECYCLE] ✅ Đã thay thế tất cả placeholders trong injection script`);
+  console.log(`[LIFECYCLE] 📊 Thông tin fingerprint:`);
+  console.log(`  - User Agent: ${userAgent.substring(0, 60)}...`);
+  console.log(`  - Platform: ${platform}`);
+  console.log(`  - Screen: ${screenWidth}x${screenHeight}`);
+  console.log(`  - WebGL: ${webglVendor} / ${webglRenderer.substring(0, 40)}...`);
+  console.log(`  - Canvas: ${canvasMode}, Audio: ${audioContextMode}`);
+
+  // ==========================================================
+  // === BƯỚC 4: KHỞI CHẠY LÕI CHROMIUM VỚI CẤU HÌNH ĐẦY ĐỦ ===
+  // ==========================================================
+  const contextOptions: any = {
+    headless: false,
+    args: [
+      '--disable-infobars',
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-dev-shm-usage',
+      '--disable-setuid-sandbox',
+      '--disable-notifications',
+      '--disable-popup-blocking',
+      '--restore-last-session',
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+      '--disable-webgpu',
+      '--disable-features=WebRtcHideLocalIpsWithMdns',
+      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--autoplay-policy=no-user-gesture-required',
+    ],
+    ignoreDefaultArgs: ['--enable-automation'],
+    viewport: {
+      width: screenWidth,
+      height: screenHeight,
+    },
+  };
+
+  // Thêm proxy nếu có
+  if (profile.proxy) {
+    const proxy = profile.proxy;
+    const server = `${proxy.type || 'http'}://${proxy.host}:${proxy.port}`;
+    contextOptions.proxy = {
+      server,
+      username: proxy.username || undefined,
+      password: proxy.password || undefined,
+    };
+    console.log(`[LIFECYCLE] ✅ Đã cấu hình proxy: ${server}`);
+  }
+
+  try {
+    console.log(`[LIFECYCLE] 🚀 Đang khởi chạy browser với persistent context...`);
+    const browserContext = await chromium.launchPersistentContext(profilePath, contextOptions);
+    console.log(`[LIFECYCLE] ✅ Browser đã được khởi chạy thành công`);
+
+    // ==========================================================
+    // === BƯỚC 5: TIÊM SCRIPT KHỞI TẠO ("PHÉP THUẬT") ===
+    // ==========================================================
+    await browserContext.addInitScript(injectionScript);
+    console.log(`[LIFECYCLE] ✅ Đã tiêm injection script vào browser`);
+
+    // Đảm bảo có ít nhất một page
+    const pages = browserContext.pages();
+    let page = pages[0];
+    if (!page) {
+      page = await browserContext.newPage();
+    }
+    try {
+      await page.bringToFront();
+    } catch (e) {
+      // Ignore
+    }
+
+    // Áp dụng User Agent qua CDP (nếu có)
+    if (userAgent) {
+      try {
+        const client = await browserContext.newCDPSession(page);
+        
+        // Extract Chrome version từ userAgent
+        const chromeVersionMatch = userAgent.match(/Chrome\/(\d+)/);
+        const chromeMajorVersion = chromeVersionMatch ? chromeVersionMatch[1] : '120';
+        const chromeFullVersion = chromeVersionMatch ? `${chromeMajorVersion}.0.6099.71` : '120.0.6099.71';
+        
+        // Determine OS name for userAgentMetadata
+        const osName = platform === 'Win32' ? 'Windows' : 
+                      platform === 'MacIntel' ? 'macOS' : 
+                      'Linux';
+        
+        await client.send('Emulation.setUserAgentOverride', {
+          userAgent: userAgent,
+          platform: platform,
+          userAgentMetadata: {
+            brands: [
+              { brand: 'Chromium', version: chromeMajorVersion },
+              { brand: 'Google Chrome', version: chromeMajorVersion },
+              { brand: 'Not=A?Brand', version: '8' },
+            ],
+            fullVersion: chromeFullVersion,
+            platform: platform,
+            platformVersion: osName === 'Windows' ? '10.0.0' : osName === 'macOS' ? '10.15.7' : '5.0.0',
+            architecture: 'x86',
+            model: '',
+            mobile: false,
+          },
+        });
+        console.log(`[LIFECYCLE] ✅ Đã áp dụng User Agent qua CDP: ${userAgent.substring(0, 60)}...`);
+      } catch (cdpError) {
+        console.warn(`[LIFECYCLE] ⚠️ Không thể áp dụng User Agent qua CDP:`, cdpError);
+      }
+    }
+
+    console.log(`[LIFECYCLE] ✅ Profile "${profile.name}" đã khởi chạy thành công.`);
+    return browserContext;
+  } catch (error) {
+    console.error(`[LIFECYCLE] ❌ Lỗi khi khởi chạy browser:`, error);
+    throw error;
+  }
+}
+
 function processInjectionTemplate(profileData: any): string {
   try {
     let template = fs.readFileSync(injectionScriptTemplatePath, 'utf-8');
