@@ -11,6 +11,7 @@ const OS_OPTIONS = [
   'Linux',
 ]
 
+// Tạo số ngẫu nhiên hợp lệ cho browserVersion (130-140) - phải match với backend validation max(140)
 const BROWSER_VERSIONS = Array.from({ length: 11 }, (_, i) => 130 + i) // 130..140
 const RESOLUTIONS = [
   '1366x768',

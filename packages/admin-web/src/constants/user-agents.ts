@@ -1,13 +1,8 @@
 // File: packages/admin-web/src/constants/user-agents.ts
-// Thư viện User-Agent chỉ Chrome version 130-141 cho Windows và macOS
+// Thư viện User-Agent chỉ Chrome version 130-140 cho Windows và macOS (match với backend validation max 140)
 
 export const USER_AGENT_LIBRARY = [
-  // --- Windows - Chrome 130-141 ---
-  { 
-    name: "Windows 11 - Chrome 141", 
-    value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-    os: "Windows"
-  },
+  // --- Windows - Chrome 130-140 ---
   { 
     name: "Windows 11 - Chrome 140", 
     value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
@@ -62,11 +57,6 @@ export const USER_AGENT_LIBRARY = [
     name: "Windows 11 - Chrome 130", 
     value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     os: "Windows"
-  },
-  { 
-    name: "Windows 10 - Chrome 141", 
-    value: "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-    os: "Windows 10"
   },
   { 
     name: "Windows 10 - Chrome 140", 
@@ -124,12 +114,7 @@ export const USER_AGENT_LIBRARY = [
     os: "Windows 10"
   },
   
-  // --- macOS - Chrome 130-141 ---
-  { 
-    name: "macOS - Chrome 141", 
-    value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-    os: "macOS"
-  },
+  // --- macOS - Chrome 130-140 ---
   { 
     name: "macOS - Chrome 140", 
     value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",

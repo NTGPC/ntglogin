@@ -78,6 +78,31 @@ app.get('/', (_req, res) => {
   });
 });
 
+// ==========================================================
+// === HẦM TRÚ ẨN: GLOBAL EXCEPTION HANDLER ===
+// ==========================================================
+// Bắt tất cả các lỗi không được xử lý để tránh crash server
+process.on('uncaughtException', (error: Error) => {
+  console.error('================================');
+  console.error('[UNCAUGHT EXCEPTION] Server đang bị crash!');
+  console.error('[UNCAUGHT EXCEPTION] Error:', error.message);
+  console.error('[UNCAUGHT EXCEPTION] Stack:', error.stack);
+  console.error('================================');
+  // KHÔNG exit process - để server tiếp tục chạy
+  // Chỉ log lỗi và tiếp tục
+});
+
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('================================');
+  console.error('[UNHANDLED REJECTION] Promise bị reject mà không được catch!');
+  console.error('[UNHANDLED REJECTION] Reason:', reason);
+  if (reason instanceof Error) {
+    console.error('[UNHANDLED REJECTION] Stack:', reason.stack);
+  }
+  console.error('================================');
+  // KHÔNG exit process - để server tiếp tục chạy
+});
+
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
@@ -86,6 +111,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📚 API documentation: http://localhost:${PORT}/api/health`);
   console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🛡️  Global exception handlers activated`);
 });
 
 export default app;

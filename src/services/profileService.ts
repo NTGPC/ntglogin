@@ -3,58 +3,65 @@ import fs from 'fs';
 import path from 'path';
 
 export const getAllProfiles = async () => {
+  // Để Prisma trả về toàn bộ object, không dùng select để tránh lỗi khi schema thay đổi
   return prisma.profile.findMany({
     include: {
-      sessions: true,
+      proxy: true, // Lấy kèm thông tin proxy nếu có
       workflow: true, // Lấy kèm thông tin workflow đã được gán
+      sessions: true, // Lấy kèm thông tin sessions
     },
   });
 };
 
 export const getProfileById = async (id: number) => {
+  // Để Prisma trả về toàn bộ object, không dùng select để tránh lỗi khi schema thay đổi
   return prisma.profile.findUnique({
     where: { id },
     include: {
-      sessions: true,
+      proxy: true, // Lấy kèm thông tin proxy nếu có
       workflow: true, // Lấy kèm thông tin workflow đã được gán
+      sessions: true, // Lấy kèm thông tin sessions
     },
   });
 };
 
+// ==========================================================
+// === PHIÊN BẢN SẠCH SẼ VÀ AN TOÀN CỦA createProfile ===
+// ==========================================================
 export const createProfile = async (data: any) => {
-  // Find the smallest available positive integer for ID (1,2,3,...) filling gaps
-  const ids = await prisma.profile.findMany({ select: { id: true }, orderBy: { id: 'asc' } });
-  let nextId = 1;
-  for (const row of ids) {
-    if (row.id === nextId) {
-      nextId++;
-    } else if (row.id > nextId) {
-      break; // found gap at nextId
-    }
-  }
+  // Bước 1: Loại bỏ 'id' phòng thủ (dù controller đã làm)
+  const { id: _dataId, ...cleanData } = data;
 
-  // Clean up browser profile directory if it exists (from previously deleted profile)
-  // This ensures new profile starts with clean state
+  // Bước 2: Tạo profile và để cho DATABASE tự quyết định ID
+  const newProfile = await prisma.profile.create({
+    data: cleanData,
+  });
+
+  // Sau khi đã có profile với ID thật, chúng ta mới thực hiện các hành động phụ
+  const newProfileId = newProfile.id;
+
+  // Bước 3: Dọn dẹp thư mục profile cũ (nếu có)
   try {
-    const profileDir = path.join(process.cwd(), 'browser_profiles', `profile_${nextId}`);
+    const profileDir = path.join(process.cwd(), 'browser_profiles', `profile_${newProfileId}`);
     if (fs.existsSync(profileDir)) {
       fs.rmSync(profileDir, { recursive: true, force: true });
-      console.log(`🧹 Cleaned up existing browser profile directory for new profile ${nextId}`);
+      console.log(`🧹 Cleaned up existing browser profile directory for new profile #${newProfileId}`);
     }
   } catch (error) {
-    console.warn(`⚠️ Failed to clean up browser profile directory for new profile ${nextId}:`, error);
-    // Continue with profile creation even if cleanup fails
+    console.warn(`⚠️ Failed to clean up browser profile directory for new profile #${newProfileId}:`, error);
+    // Không dừng lại nếu dọn dẹp thất bại, chỉ cảnh báo
   }
 
-  return prisma.profile.create({
-    data: { id: nextId, ...data },
-  });
+  // Bước 4: Trả về profile đã được tạo thành công
+  return newProfile;
 };
 
 export const updateProfile = async (id: number, data: any) => {
+  // Loại bỏ 'id' nếu có trong data (phòng thủ)
+  const { id: _dataId, ...cleanData } = data;
   return prisma.profile.update({
     where: { id },
-    data,
+    data: cleanData,
   });
 };
 

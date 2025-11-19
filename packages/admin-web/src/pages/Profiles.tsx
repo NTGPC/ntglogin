@@ -223,14 +223,14 @@ export default function Profiles() {
 
   const loadUserAgents = async () => {
     try {
-      // Lọc chỉ lấy User Agents có Chrome version 130-141
+      // Lọc chỉ lấy User Agents có Chrome version 130-140 (match với backend validation)
       const allUAs = await api.getUserAgentList()
       const filteredUAs = allUAs.filter((ua: any) => {
         const uaString = ua.value || ua.userAgent || ''
         const chromeMatch = uaString.match(/Chrome\/(\d+)/)
         if (chromeMatch) {
           const version = parseInt(chromeMatch[1], 10)
-          return version >= 130 && version <= 141
+          return version >= 130 && version <= 140
         }
         return false
       })
@@ -239,20 +239,20 @@ export default function Profiles() {
         const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
         if (chromeMatch) {
           const version = parseInt(chromeMatch[1], 10)
-          return version >= 130 && version <= 141
+          return version >= 130 && version <= 140
         }
         return false
       })
       const finalUAs = filteredUAs.length > 0 ? filteredUAs : libraryUAs
       setUserAgents(finalUAs)
-      console.log(`[Profiles] Loaded ${finalUAs.length} User-Agents (Chrome 130-141 only)`)
+      console.log(`[Profiles] Loaded ${finalUAs.length} User-Agents (Chrome 130-140 only)`)
     } catch (error) {
       // Fallback to library
       const libraryUAs = USER_AGENT_LIBRARY.filter(ua => {
         const chromeMatch = ua.value.match(/Chrome\/(\d+)/)
         if (chromeMatch) {
           const version = parseInt(chromeMatch[1], 10)
-          return version >= 130 && version <= 141
+          return version >= 130 && version <= 140
         }
         return false
       })
@@ -270,6 +270,13 @@ export default function Profiles() {
     return null
   }
 
+  // Tạo số ngẫu nhiên hợp lệ cho browserVersion (130-140) - phải match với backend validation
+  const generateRandomBrowserVersion = (): number => {
+    const minVersion = 130
+    const maxVersion = 140 // Backend chỉ chấp nhận max 140
+    return Math.floor(Math.random() * (maxVersion - minVersion + 1)) + minVersion
+  }
+
   const handleUserAgentChange = (uaValue: string) => {
     if (!uaValue) return
     
@@ -282,7 +289,7 @@ export default function Profiles() {
     
     // Auto-extract và set Browser Version từ User Agent
     const version = extractBrowserVersion(uaValue)
-    if (version && version >= 130 && version <= 141) {
+    if (version && version >= 130 && version <= 140) {
       setBrowserVersion(String(version))
     }
     
@@ -1217,16 +1224,16 @@ export default function Profiles() {
                       const newOS = e.target.value;
                       setOsName(newOS);
                       // Auto-update User Agent và WebGL Renderer khi OS thay đổi
-                      // Lọc chỉ lấy UA có Chrome 130-141
+                      // Lọc chỉ lấy UA có Chrome 130-140 (match với backend validation)
                       const compatibleAgents = USER_AGENT_LIBRARY.filter(agent => {
                         const agentOS = agent.os || '';
                         const isOSMatch = agentOS === newOS || agentOS.includes(newOS) || newOS.includes(agentOS);
                         if (!isOSMatch) return false;
-                        // Lọc version 130-141
+                        // Lọc version 130-140
                         const chromeMatch = agent.value.match(/Chrome\/(\d+)/);
                         if (chromeMatch) {
                           const version = parseInt(chromeMatch[1], 10);
-                          return version >= 130 && version <= 141;
+                          return version >= 130 && version <= 140;
                         }
                         return false;
                       });
@@ -1282,13 +1289,25 @@ export default function Profiles() {
                   <Label>Browser Version (Auto từ User Agent)</Label>
                   <select value={browserVersion} onChange={(e) => setBrowserVersion(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm bg-gray-50" disabled>
                     <option>Auto</option>
-                    {[141,140,139,138,137,136,135,134,133,132,131,130].map((v) => (
+                    {[140,139,138,137,136,135,134,133,132,131,130].map((v) => (
                       <option key={v} value={String(v)}>
                         {v}
                       </option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">Tự động chọn dựa trên User Agent</p>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-2"
+                    onClick={() => {
+                      const randomVersion = generateRandomBrowserVersion()
+                      setBrowserVersion(String(randomVersion))
+                    }}
+                  >
+                    🎲 Random (130-140)
+                  </Button>
                 </div>
                 <div className="space-y-1">
                   <Label>Screen Resolution (Random)</Label>

@@ -6,15 +6,6 @@ import { getUniqueUA } from '../services/userAgentProvider'
 import { randomUnique as randomMac } from '../services/macService'
 import * as fpService from '../services/fingerprintService'
 import prisma from '../prismaClient'
-import * as path from 'path'
-
-// Helper function để resolve path alias @worker/* ở runtime
-function resolveWorkerPath(aliasPath: string): string {
-  // Thay thế @worker/ bằng đường dẫn thực tế
-  const workerPath = aliasPath.replace('@worker/', '');
-  // Resolve từ root project (process.cwd())
-  return path.resolve(process.cwd(), 'packages/worker/src', workerPath);
-}
 
 export const getAll = asyncHandler(async (_req: Request, res: Response) => {
   const profiles = await profileService.getAllProfiles();
@@ -92,147 +83,237 @@ const createSchema = z.object({
   ]).optional(), // ID của workflow được gán, có thể là number, 'none', hoặc null
 })
 
+// ==========================================================
+// === HÀM LÀM SẠCH VÀ CHUYỂN ĐỔI DỮ LIỆU ===
+// ==========================================================
+function sanitizeProfileData(body: any) {
+  console.log('[SANITIZE] Dữ liệu gốc nhận từ frontend:', body);
+
+  const sanitized = {
+    // --- STRING FIELDS ---
+    name: String(body.name || '').trim(),
+    userAgent: String(body.userAgent || body.user_agent || '').trim(),
+    os: String(body.os || body.osName || '').trim(),
+    osName: String(body.osName || body.os || '').trim(),
+    osArch: String(body.osArch || 'x64').trim(),
+    platform: String(body.platform || 'Win32').trim(),
+    webglRenderer: body.webglRenderer ? String(body.webglRenderer).trim() : null,
+    webglVendor: body.webglVendor ? String(body.webglVendor).trim() : null,
+    macAddress: body.macAddress ? String(body.macAddress).trim() : null,
+    notes: body.notes ? String(body.notes).trim() : null,
+    timezone: String(body.timezone || body.timezoneId || 'Europe/London').trim(),
+    timezoneId: String(body.timezone || body.timezoneId || 'Europe/London').trim(),
+    language: String(body.language || 'en-US').trim(),
+
+    // --- INTEGER FIELDS - Chuyển đổi an toàn với giá trị mặc định ---
+    hardwareConcurrency: (() => {
+      const value = body.hardwareConcurrency;
+      if (value === undefined || value === null || value === '') return 8;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) || parsed < 1 ? 8 : parsed;
+    })(),
+    deviceMemory: (() => {
+      const value = body.deviceMemory;
+      if (value === undefined || value === null || value === '') return 8;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) || parsed < 1 ? 8 : parsed;
+    })(),
+    screenWidth: (() => {
+      const value = body.screenWidth;
+      if (value === undefined || value === null || value === '') return 1920;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) || parsed < 1 ? 1920 : parsed;
+    })(),
+    screenHeight: (() => {
+      const value = body.screenHeight;
+      if (value === undefined || value === null || value === '') return 1080;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) || parsed < 1 ? 1080 : parsed;
+    })(),
+    browserVersion: (() => {
+      const value = body.browserVersion;
+      if (value === undefined || value === null || value === '') return null;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) ? null : parsed;
+    })(),
+
+    // --- ARRAY FIELDS - Chuyển đổi từ string hoặc array ---
+    languages: (() => {
+      if (Array.isArray(body.languages) && body.languages.length > 0) {
+        return body.languages.map((lang: any) => String(lang).trim()).filter((lang: string) => lang.length > 0);
+      }
+      if (typeof body.languages === 'string' && body.languages.trim()) {
+        return body.languages.split(',').map((lang: string) => lang.trim()).filter((lang: string) => lang.length > 0);
+      }
+      if (body.language) {
+        return [String(body.language).trim()];
+      }
+      return ['en-US', 'en'];
+    })(),
+
+    // --- STRING MODE FIELDS ---
+    canvasMode: String(body.canvasMode || body.canvas || 'noise').trim(),
+    clientRectsMode: body.clientRectsMode || body.clientRects || null,
+    audioContextMode: String(body.audioContextMode || body.audioCtxMode || body.audioContext || 'noise').trim(),
+    webglImageMode: body.webglImageMode || body.webglImage || null,
+    webglMetaMode: body.webglMetaMode || body.webglMetadata || null,
+    webrtcMode: String(body.webrtcMode || (body.webrtcMainIP ? 'fake' : 'off')).trim(),
+    geolocationMode: String(body.geolocationMode || (body.geoEnabled ? 'fake' : 'off')).trim(),
+
+    // --- BOOLEAN/NUMBER FIELDS ---
+    webrtcMainIP: body.webrtcMainIP ?? body.webrtcMainIp ?? false,
+    // geoEnabled được map sang geolocationEnabled (schema field)
+    geolocationEnabled: body.geoEnabled ?? body.geolocationEnabled ?? (body.geolocationMode === 'fake'),
+    geoLatitude: body.geoLatitude ? parseFloat(String(body.geoLatitude)) : null,
+    geoLongitude: body.geoLongitude ? parseFloat(String(body.geoLongitude)) : null,
+
+    // --- RELATION FIELDS ---
+    proxyId: (() => {
+      const value = body.proxyId || body.proxyRefId;
+      if (!value) return null;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) ? null : parsed;
+    })(),
+    proxyRefId: body.proxyRefId || null,
+    proxyManual: body.proxyManual || null,
+  };
+
+  console.log('[SANITIZE] Dữ liệu đã được làm sạch:', JSON.stringify(sanitized, null, 2));
+  return sanitized;
+}
+
 export const create = asyncHandler(async (req: Request, res: Response) => {
   try {
     console.log('================================');
     console.log(`[CREATE] Nhận yêu cầu tạo profile mới`);
     console.log(`[CREATE] Raw body:`, JSON.stringify(req.body, null, 2));
     
-  const parsed = createSchema.safeParse(req.body)
-  if (!parsed.success) {
-      console.error(`[CREATE] ❌ Validation error:`, parsed.error.issues);
+    const parsed = createSchema.safeParse(req.body)
+    if (!parsed.success) {
+      console.error(`[CREATE] ❌ Validation error:`, JSON.stringify(parsed.error.issues, null, 2));
       throw new AppError(`Validation error: ${parsed.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ')}`, 400)
     }
     const body = parsed.data
 
     console.log(`[CREATE] ✅ Validation passed`);
     console.log(`[CREATE] Dữ liệu sau validation:`, JSON.stringify(body, null, 2));
-    console.log(`[CREATE] hardwareConcurrency:`, body.hardwareConcurrency, typeof body.hardwareConcurrency);
-    console.log(`[CREATE] deviceMemory:`, body.deviceMemory, typeof body.deviceMemory);
     console.log('================================');
 
-  if (!body.name) {
-    throw new AppError('Name is required', 400);
-  }
+    // ==========================================================
+    // === LÀM SẠCH VÀ CHUYỂN ĐỔI DỮ LIỆU ===
+    // ==========================================================
+    const cleanData = sanitizeProfileData(body);
 
-  // ==========================================================
-  // === LẤY DỮ LIỆU TỪ BODY - NGUỒN CHÂN LÝ DUY NHẤT ===
-  // ==========================================================
-  // KHÔNG override, KHÔNG generate mới nếu đã có trong body
-  const finalUA = body.userAgent || body.user_agent
-  const finalOS = body.os || body.osName
-  const finalScreenWidth = body.screenWidth
-  const finalScreenHeight = body.screenHeight
+    if (!cleanData.name) {
+      throw new AppError('Name is required', 400);
+    }
 
-  console.log(`[CREATE] User Agent từ body:`, finalUA);
-  console.log(`[CREATE] OS từ body:`, finalOS);
-  console.log(`[CREATE] Screen Width từ body:`, finalScreenWidth);
-  console.log(`[CREATE] Screen Height từ body:`, finalScreenHeight);
+    // ==========================================================
+    // === GENERATE CÁC GIÁ TRỊ MẶC ĐỊNH NẾU THIẾU ===
+    // ==========================================================
+    let userAgentToUse = cleanData.userAgent;
+    if (!userAgentToUse) {
+      userAgentToUse = await getUniqueUA({ 
+        browser: 'chrome', 
+        versionHint: cleanData.browserVersion || undefined, 
+        os: cleanData.os || 'Windows 10' 
+      });
+      console.log(`[CREATE] Không có UA trong body, đã generate mới:`, userAgentToUse);
+    }
 
-  // Chỉ generate UA mới nếu KHÔNG có trong body
-  let userAgentToUse = finalUA
-  if (!userAgentToUse) {
-    userAgentToUse = await getUniqueUA({ 
-      browser: 'chrome', 
-      versionHint: body.browserVersion, 
-      os: finalOS || 'Windows 10' 
-    })
-    console.log(`[CREATE] Không có UA trong body, đã generate mới:`, userAgentToUse);
-  }
+    let macToUse = cleanData.macAddress;
+    if (!macToUse) {
+      macToUse = await randomMac();
+      console.log(`[CREATE] Không có MAC trong body, đã generate mới:`, macToUse);
+    }
 
-  // Chỉ generate MAC mới nếu KHÔNG có trong body
-  let macToUse = body.macAddress
-  if (!macToUse) {
-    macToUse = await randomMac()
-    console.log(`[CREATE] Không có MAC trong body, đã generate mới:`, macToUse);
-  }
+    // ==========================================================
+    // === BUILD FINGERPRINT ===
+    // ==========================================================
+    const bodyAny = body as any;
+    const tempSeed = Date.now() % 1000000;
+    const fp = bodyAny.fingerprintJson 
+      ? JSON.parse(typeof bodyAny.fingerprintJson === 'string' ? bodyAny.fingerprintJson : JSON.stringify(bodyAny.fingerprintJson))
+      : fpService.build({
+          osName: cleanData.osName as any,
+          osArch: cleanData.osArch as any,
+          browserVersion: cleanData.browserVersion || 136,
+          screenWidth: cleanData.screenWidth,
+          screenHeight: cleanData.screenHeight,
+          canvasMode: cleanData.canvasMode === 'noise' ? 'Noise' : cleanData.canvasMode === 'off' ? 'Off' : 'Noise',
+          clientRectsMode: cleanData.clientRectsMode === 'noise' ? 'Noise' : 'Off',
+          audioCtxMode: cleanData.audioContextMode === 'noise' ? 'Noise' : 'Off',
+          webglImageMode: cleanData.webglImageMode === 'noise' ? 'Noise' : 'Off',
+          webglMetaMode: cleanData.webglMetaMode === 'mask' ? 'Mask' : 'Real',
+          geolocationEnabled: cleanData.geolocationEnabled ?? (cleanData.geolocationMode === 'fake'),
+          geoLatitude: cleanData.geoLatitude,
+          geoLongitude: cleanData.geoLongitude,
+          webrtcMainIP: cleanData.webrtcMainIP ?? false,
+          proxyRefId: cleanData.proxyRefId ?? null,
+          proxyManual: cleanData.proxyManual ?? null,
+          ua: userAgentToUse,
+          mac: macToUse,
+          timezoneId: cleanData.timezone,
+          language: cleanData.language,
+          hardwareConcurrency: cleanData.hardwareConcurrency,
+          deviceMemory: cleanData.deviceMemory,
+          seed: tempSeed,
+        } as any);
 
-  // Sử dụng screenWidth/screenHeight từ body, hoặc default nếu không có
-  const screenWidthToUse = finalScreenWidth ?? 1920
-  const screenHeightToUse = finalScreenHeight ?? 1080
-
-  // Build fingerprint từ dữ liệu body (KHÔNG dùng fingerprintJson cũ)
-  const tempSeed = Date.now() % 1000000
-  const bodyAny = body as any // Type assertion để truy cập các trường không có trong schema
-  const fp = bodyAny.fingerprintJson ? JSON.parse(typeof bodyAny.fingerprintJson === 'string' ? bodyAny.fingerprintJson : JSON.stringify(bodyAny.fingerprintJson)) : fpService.build({
-    osName: (finalOS || bodyAny.osName) as any,
-    osArch: (bodyAny.osArch as any) || 'x64',
-    browserVersion: bodyAny.browserVersion || 136,
-    screenWidth: screenWidthToUse,
-    screenHeight: screenHeightToUse,
-    canvasMode: bodyAny.canvasMode || bodyAny.canvas || 'Noise',
-    clientRectsMode: bodyAny.clientRectsMode || bodyAny.clientRects || 'Off',
-    audioCtxMode: bodyAny.audioCtxMode || bodyAny.audioContext || 'Off',
-    webglImageMode: bodyAny.webglImageMode || bodyAny.webglImage || 'Off',
-    webglMetaMode: bodyAny.webglMetaMode || bodyAny.webglMetadata || 'Mask',
-    geoEnabled: bodyAny.geoEnabled ?? false,
-    geoLatitude: bodyAny.geoLatitude,
-    geoLongitude: bodyAny.geoLongitude,
-    webrtcMainIP: bodyAny.webrtcMainIP ?? bodyAny.webrtcMainIp ?? false,
-    proxyRefId: bodyAny.proxyRefId ?? null,
-    proxyManual: bodyAny.proxyManual ?? null,
-    ua: userAgentToUse,
-    mac: macToUse,
-    timezoneId: bodyAny.timezone || bodyAny.timezoneId,
-    language: bodyAny.language,
-    hardwareConcurrency: bodyAny.hardwareConcurrency,
-    deviceMemory: bodyAny.deviceMemory,
-    seed: tempSeed,
-  } as any)
-
-  // Create profile với dữ liệu từ body
-  console.log(`[CREATE] Đang tạo profile với dữ liệu...`);
-  
-  // Đảm bảo các giá trị required luôn có giá trị (không undefined)
-  const finalHardwareConcurrency = bodyAny.hardwareConcurrency !== undefined && bodyAny.hardwareConcurrency !== null 
-    ? Number(bodyAny.hardwareConcurrency) 
-    : 8;
-  const finalDeviceMemory = bodyAny.deviceMemory !== undefined && bodyAny.deviceMemory !== null 
-    ? Number(bodyAny.deviceMemory) 
-    : 8;
-  const finalLanguages = Array.isArray(bodyAny.languages) && bodyAny.languages.length > 0 
-    ? bodyAny.languages 
-    : (bodyAny.language ? [bodyAny.language] : ['en-US', 'en']);
-  const finalLanguage = bodyAny.language || 'en-US';
-  const finalTimezone = bodyAny.timezone || bodyAny.timezoneId || 'Europe/London';
-  
-  console.log(`[CREATE] hardwareConcurrency sẽ lưu:`, finalHardwareConcurrency);
-  console.log(`[CREATE] deviceMemory sẽ lưu:`, finalDeviceMemory);
-  console.log(`[CREATE] languages sẽ lưu:`, finalLanguages);
-  console.log(`[CREATE] language sẽ lưu:`, finalLanguage);
-  console.log(`[CREATE] timezone sẽ lưu:`, finalTimezone);
-  
-  const profile = await profileService.createProfile({
-    name: body.name,
-    user_agent: userAgentToUse,
-    userAgent: userAgentToUse,
-    os: finalOS,
-    osName: finalOS || bodyAny.osName,
-    osArch: bodyAny.osArch,
-    browserVersion: bodyAny.browserVersion,
-    screenWidth: screenWidthToUse,
-    screenHeight: screenHeightToUse,
-    canvasMode: bodyAny.canvasMode || bodyAny.canvas,
-    clientRectsMode: bodyAny.clientRectsMode || bodyAny.clientRects,
-    audioCtxMode: bodyAny.audioCtxMode || bodyAny.audioContext,
-    webglImageMode: bodyAny.webglImageMode || bodyAny.webglImage,
-    webglMetaMode: bodyAny.webglMetaMode || bodyAny.webglMetadata,
-    geoEnabled: bodyAny.geoEnabled,
-    geoLatitude: bodyAny.geoLatitude,
-    geoLongitude: bodyAny.geoLongitude,
-    webrtcMainIP: bodyAny.webrtcMainIP ?? bodyAny.webrtcMainIp,
-    proxyRefId: bodyAny.proxyRefId,
-    proxyManual: bodyAny.proxyManual,
-    macAddress: macToUse,
-    fingerprint: fp,
-    fingerprintJson: fp,
-    timezoneId: finalTimezone,
-    timezone: finalTimezone,
-    language: finalLanguage,
-    languages: finalLanguages,
-    hardwareConcurrency: finalHardwareConcurrency,
-    deviceMemory: finalDeviceMemory,
-  } as any)
+    // ==========================================================
+    // === TẠO PROFILE VỚI DỮ LIỆU ĐÃ LÀM SẠCH ===
+    // ==========================================================
+    console.log(`[CREATE] Đang tạo profile với dữ liệu đã làm sạch...`);
+    console.log(`[CREATE] hardwareConcurrency:`, cleanData.hardwareConcurrency, typeof cleanData.hardwareConcurrency);
+    console.log(`[CREATE] deviceMemory:`, cleanData.deviceMemory, typeof cleanData.deviceMemory);
+    console.log(`[CREATE] screenWidth:`, cleanData.screenWidth, typeof cleanData.screenWidth);
+    console.log(`[CREATE] screenHeight:`, cleanData.screenHeight, typeof cleanData.screenHeight);
+    console.log(`[CREATE] languages:`, cleanData.languages, Array.isArray(cleanData.languages));
+    
+    // Loại bỏ 'id' và 'geoEnabled' nếu có trong cleanData (phòng thủ)
+    const { id: _id, geoEnabled: _geoEnabled, ...dataToCreate } = cleanData as any;
+    console.log(`[CREATE] Dữ liệu sạch để TẠO MỚI (đã loại bỏ id và geoEnabled):`, JSON.stringify(dataToCreate, null, 2));
+    
+    // ==========================================================
+    // === ĐẢM BẢO CÁC TRƯỜNG BẮT BUỘC ĐƯỢC CUNG CẤP ===
+    // ==========================================================
+    // Các trường bắt buộc trong schema (không có default):
+    // - name: String (đã validate ở trên)
+    // Các trường có default trong schema (Prisma sẽ tự set nếu không có):
+    // - platform: String @default("Win32")
+    // - hardwareConcurrency: Int @default(8)
+    // - deviceMemory: Int @default(8)
+    // - languages: String[] @default(["en-US", "en"])
+    // - canvasMode: String @default("noise")
+    // - audioContextMode: String @default("noise")
+    // - webrtcMode: String @default("fake")
+    // - geolocationMode: String @default("fake")
+    
+    const profile = await profileService.createProfile({
+      // Trường bắt buộc
+      name: cleanData.name, // Đã validate ở trên
+      
+      // Các trường đã được sanitize với default values
+      platform: cleanData.platform || 'Win32',
+      hardwareConcurrency: cleanData.hardwareConcurrency || 8,
+      deviceMemory: cleanData.deviceMemory || 8,
+      languages: cleanData.languages || ['en-US', 'en'],
+      canvasMode: cleanData.canvasMode || 'noise',
+      audioContextMode: cleanData.audioContextMode || 'noise',
+      webrtcMode: cleanData.webrtcMode || 'fake',
+      geolocationMode: cleanData.geolocationMode || 'fake',
+      
+      // Các trường từ dataToCreate (đã được sanitize và loại bỏ geoEnabled)
+      ...dataToCreate,
+      
+      // Override với các giá trị đã generate
+      user_agent: userAgentToUse,
+      userAgent: userAgentToUse,
+      macAddress: macToUse,
+      fingerprint: fp,
+      fingerprintJson: fp,
+      ...(cleanData.proxyId && { proxyId: cleanData.proxyId }),
+    } as any)
 
   // Update fingerprint with actual profileId as seed for deterministic noise
   const finalFp = {
@@ -241,9 +322,11 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     seed: profile.id,
   }
   
+  // Loại bỏ 'id' nếu có trong finalFp (phòng thủ)
+  const { id: ___id, ...cleanFp } = finalFp as any;
   await profileService.updateProfile(profile.id, {
-    fingerprint: finalFp,
-    fingerprintJson: finalFp,
+    fingerprint: cleanFp,
+    fingerprintJson: cleanFp,
   } as any)
 
   // Reload profile with updated fingerprint
@@ -318,121 +401,126 @@ export const getUserAgent = asyncHandler(async (req: Request, res: Response) => 
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const body = req.body; // Lấy toàn bộ body request
+  
+  // ==========================================================
+  // === LOẠI BỎ 'id' NGAY TỪ ĐẦU ===
+  // ==========================================================
+  const { id: _bodyId, ...bodyWithoutId } = req.body; // Loại bỏ 'id' khỏi body ngay lập tức
+  const body = bodyWithoutId;
 
   console.log('================================');
   console.log(`[UPDATE] Nhận yêu cầu cập nhật cho Profile ID: ${id}`);
-  console.log(`[UPDATE] Dữ liệu nhận được từ body:`, JSON.stringify(body, null, 2));
+  console.log(`[UPDATE] Dữ liệu nhận được từ body (đã loại bỏ id):`, JSON.stringify(body, null, 2));
   console.log('================================');
 
   try {
     // ==========================================================
-    // === LẤY DỮ LIỆU TỪ BODY - NGUỒN CHÂN LÝ DUY NHẤT ===
+    // === LÀM SẠCH VÀ CHUYỂN ĐỔI DỮ LIỆU ===
     // ==========================================================
-    // 1. TẠO MỘT OBJECT RỖNG ĐỂ CHỨA DỮ LIỆU CẦN CẬP NHẬT
+    const cleanData = sanitizeProfileData(body);
+    console.log(`[UPDATE] Dữ liệu đã được làm sạch:`, JSON.stringify(cleanData, null, 2));
+    
+    // ==========================================================
+    // === XÂY DỰNG OBJECT CẬP NHẬT ===
+    // ==========================================================
     const dataToUpdate: any = {};
 
-    // 2. KIỂM TRA TỪNG TRƯỜNG MỘT. TRƯỜNG NÀO CÓ THÌ MỚI THÊM VÀO OBJECT
-    // Điều này giúp chúng ta có thể dùng chung endpoint này để cập nhật nhiều thứ
-    if (body.name !== undefined) {
-      dataToUpdate.name = body.name;
+    // Chỉ cập nhật các trường có trong cleanData (không undefined)
+    if (cleanData.name !== undefined && cleanData.name !== '') {
+      dataToUpdate.name = cleanData.name;
     }
-
-    // === USER AGENT - LẤY TỪ BODY ===
-    if (body.userAgent !== undefined) {
-      dataToUpdate.userAgent = body.userAgent;
-      dataToUpdate.user_agent = body.userAgent; // Đồng bộ cả 2 trường
-      console.log(`[UPDATE] ✅ Cập nhật userAgent từ body:`, body.userAgent);
-    } else if (body.user_agent !== undefined) {
-      dataToUpdate.user_agent = body.user_agent;
-      dataToUpdate.userAgent = body.user_agent; // Đồng bộ cả 2 trường
-      console.log(`[UPDATE] ✅ Cập nhật user_agent từ body:`, body.user_agent);
+    if (cleanData.userAgent !== undefined && cleanData.userAgent !== '') {
+      dataToUpdate.userAgent = cleanData.userAgent;
+      dataToUpdate.user_agent = cleanData.userAgent;
     }
-
-    // === OS - LẤY TỪ BODY ===
-    if (body.os !== undefined) {
-      dataToUpdate.os = body.os;
-      dataToUpdate.osName = body.os; // Đồng bộ cả 2 trường
-      console.log(`[UPDATE] ✅ Cập nhật os từ body:`, body.os);
-    } else if (body.osName !== undefined) {
-      dataToUpdate.osName = body.osName;
-      dataToUpdate.os = body.osName; // Đồng bộ cả 2 trường
-      console.log(`[UPDATE] ✅ Cập nhật osName từ body:`, body.osName);
+    if (cleanData.os !== undefined && cleanData.os !== '') {
+      dataToUpdate.os = cleanData.os;
+      dataToUpdate.osName = cleanData.osName;
+    }
+    if (cleanData.osArch !== undefined && cleanData.osArch !== '') {
+      dataToUpdate.osArch = cleanData.osArch;
+    }
+    if (cleanData.screenWidth !== undefined) {
+      dataToUpdate.screenWidth = cleanData.screenWidth;
+    }
+    if (cleanData.screenHeight !== undefined) {
+      dataToUpdate.screenHeight = cleanData.screenHeight;
+    }
+    if (cleanData.browserVersion !== undefined && cleanData.browserVersion !== null) {
+      dataToUpdate.browserVersion = cleanData.browserVersion;
+    }
+    if (cleanData.canvasMode !== undefined && cleanData.canvasMode !== '') {
+      dataToUpdate.canvasMode = cleanData.canvasMode;
+    }
+    if (cleanData.clientRectsMode !== undefined && cleanData.clientRectsMode !== null) {
+      dataToUpdate.clientRectsMode = cleanData.clientRectsMode;
+    }
+    if (cleanData.audioContextMode !== undefined && cleanData.audioContextMode !== '') {
+      dataToUpdate.audioCtxMode = cleanData.audioContextMode;
+      dataToUpdate.audioContextMode = cleanData.audioContextMode;
+    }
+    if (cleanData.webglImageMode !== undefined && cleanData.webglImageMode !== null) {
+      dataToUpdate.webglImageMode = cleanData.webglImageMode;
+    }
+    if (cleanData.webglMetaMode !== undefined && cleanData.webglMetaMode !== null) {
+      dataToUpdate.webglMetaMode = cleanData.webglMetaMode;
+    }
+    if (cleanData.webglRenderer !== undefined && cleanData.webglRenderer !== null) {
+      dataToUpdate.webglRenderer = cleanData.webglRenderer;
+    }
+    if (cleanData.webglVendor !== undefined && cleanData.webglVendor !== null) {
+      dataToUpdate.webglVendor = cleanData.webglVendor;
+    }
+    if (cleanData.geolocationEnabled !== undefined) {
+      dataToUpdate.geolocationEnabled = cleanData.geolocationEnabled;
+    }
+    if (cleanData.geoLatitude !== undefined && cleanData.geoLatitude !== null) {
+      dataToUpdate.geolocationLat = cleanData.geoLatitude;
+      dataToUpdate.geoLatitude = cleanData.geoLatitude;
+    }
+    if (cleanData.geoLongitude !== undefined && cleanData.geoLongitude !== null) {
+      dataToUpdate.geolocationLon = cleanData.geoLongitude;
+      dataToUpdate.geoLongitude = cleanData.geoLongitude;
+    }
+    if (cleanData.webrtcMainIP !== undefined) {
+      dataToUpdate.webrtcMainIP = cleanData.webrtcMainIP;
+    }
+    if (cleanData.hardwareConcurrency !== undefined) {
+      dataToUpdate.hardwareConcurrency = cleanData.hardwareConcurrency;
+    }
+    if (cleanData.deviceMemory !== undefined) {
+      dataToUpdate.deviceMemory = cleanData.deviceMemory;
+    }
+    if (cleanData.languages !== undefined && Array.isArray(cleanData.languages)) {
+      dataToUpdate.languages = cleanData.languages;
+    }
+    if (cleanData.language !== undefined && cleanData.language !== '') {
+      dataToUpdate.language = cleanData.language;
+    }
+    if (cleanData.timezone !== undefined && cleanData.timezone !== '') {
+      dataToUpdate.timezone = cleanData.timezone;
+      dataToUpdate.timezoneId = cleanData.timezone;
+    }
+    if (cleanData.macAddress !== undefined && cleanData.macAddress !== null) {
+      dataToUpdate.macAddress = cleanData.macAddress;
+    }
+    if (cleanData.platform !== undefined && cleanData.platform !== '') {
+      dataToUpdate.platform = cleanData.platform;
+    }
+    if (cleanData.notes !== undefined) {
+      dataToUpdate.notes = cleanData.notes;
+    }
+    if (cleanData.proxyId !== undefined && cleanData.proxyId !== null) {
+      dataToUpdate.proxyId = cleanData.proxyId;
+    }
+    if (cleanData.proxyRefId !== undefined && cleanData.proxyRefId !== null) {
+      dataToUpdate.proxyRefId = cleanData.proxyRefId;
+    }
+    if (cleanData.proxyManual !== undefined && cleanData.proxyManual !== null) {
+      dataToUpdate.proxyManual = cleanData.proxyManual;
     }
     
-    // === SCREEN WIDTH/HEIGHT - LẤY TỪ BODY ===
-    if (body.screenWidth !== undefined) {
-      dataToUpdate.screenWidth = Number(body.screenWidth);
-      console.log(`[UPDATE] ✅ Cập nhật screenWidth từ body:`, body.screenWidth);
-    }
-    if (body.screenHeight !== undefined) {
-      dataToUpdate.screenHeight = Number(body.screenHeight);
-      console.log(`[UPDATE] ✅ Cập nhật screenHeight từ body:`, body.screenHeight);
-    }
-
-    // === CÁC TRƯỜNG FINGERPRINT KHÁC - LẤY TỪ BODY ===
-    if (body.canvas !== undefined || body.canvasMode !== undefined) {
-      const canvasValue = body.canvasMode || body.canvas;
-      dataToUpdate.canvas = canvasValue;
-      dataToUpdate.canvasMode = canvasValue;
-    }
-    if (body.clientRects !== undefined || body.clientRectsMode !== undefined) {
-      const clientRectsValue = body.clientRectsMode || body.clientRects;
-      dataToUpdate.clientRects = clientRectsValue;
-      dataToUpdate.clientRectsMode = clientRectsValue;
-    }
-    if (body.audioContext !== undefined || body.audioCtxMode !== undefined) {
-      const audioValue = body.audioCtxMode || body.audioContext;
-      dataToUpdate.audioContext = audioValue;
-      dataToUpdate.audioCtxMode = audioValue;
-    }
-    if (body.webglImage !== undefined || body.webglImageMode !== undefined) {
-      const webglImageValue = body.webglImageMode || body.webglImage;
-      dataToUpdate.webglImage = webglImageValue;
-      dataToUpdate.webglImageMode = webglImageValue;
-    }
-    if (body.webglMetadata !== undefined || body.webglMetaMode !== undefined) {
-      const webglMetaValue = body.webglMetaMode || body.webglMetadata;
-      dataToUpdate.webglMetadata = webglMetaValue;
-      dataToUpdate.webglMetaMode = webglMetaValue;
-    }
-    if (body.geoEnabled !== undefined) {
-      dataToUpdate.geoEnabled = Boolean(body.geoEnabled);
-    }
-    if (body.webrtcMainIp !== undefined || body.webrtcMainIP !== undefined) {
-      const webrtcValue = body.webrtcMainIP ?? body.webrtcMainIp;
-      dataToUpdate.webrtcMainIp = Boolean(webrtcValue);
-      dataToUpdate.webrtcMainIP = Boolean(webrtcValue);
-    }
-
-    // === NAVIGATOR OBJECT - Thông số fingerprint đầy đủ ===
-    if (body.hardwareConcurrency !== undefined) {
-      dataToUpdate.hardwareConcurrency = Number(body.hardwareConcurrency);
-      console.log(`[UPDATE] ✅ Cập nhật hardwareConcurrency từ body:`, body.hardwareConcurrency);
-    }
-    if (body.deviceMemory !== undefined) {
-      dataToUpdate.deviceMemory = Number(body.deviceMemory);
-      console.log(`[UPDATE] ✅ Cập nhật deviceMemory từ body:`, body.deviceMemory);
-    }
-    if (body.languages !== undefined) {
-      dataToUpdate.languages = Array.isArray(body.languages) ? body.languages : [body.languages];
-      console.log(`[UPDATE] ✅ Cập nhật languages từ body:`, body.languages);
-    }
-    if (body.timezone !== undefined) {
-      dataToUpdate.timezone = body.timezone;
-      dataToUpdate.timezoneId = body.timezone; // Đồng bộ cả 2 trường
-      console.log(`[UPDATE] ✅ Cập nhật timezone từ body:`, body.timezone);
-    } else if (body.timezoneId !== undefined) {
-      dataToUpdate.timezoneId = body.timezoneId;
-      dataToUpdate.timezone = body.timezoneId; // Đồng bộ cả 2 trường
-      console.log(`[UPDATE] ✅ Cập nhật timezoneId từ body:`, body.timezoneId);
-    }
-    if (body.language !== undefined) {
-      dataToUpdate.language = body.language;
-      console.log(`[UPDATE] ✅ Cập nhật language từ body:`, body.language);
-    }
-
-    // ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT CHO WORKFLOW
+    // === WORKFLOW ID (giữ nguyên logic cũ) ===
     if (body.workflowId !== undefined) {
       // Xử lý giá trị 'none' thành null
       if (body.workflowId === 'none' || body.workflowId === '' || body.workflowId === null) {
@@ -456,10 +544,14 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Không có dữ liệu hợp lệ để cập nhật.' });
     }
 
-    // 4. THỰC THI LỆNH UPDATE VỚI DỮ LIỆU ĐÃ ĐƯỢC XÂY DỰNG
+    // 4. LOẠI BỎ 'id' MỘT LẦN NỮA ĐỂ ĐẢM BẢO AN TOÀN
+    const { id: __id, ...finalDataToUpdate } = dataToUpdate as any;
+    console.log(`[UPDATE] Dữ liệu sạch để CẬP NHẬT profile ${id} (đã loại bỏ id):`, JSON.stringify(finalDataToUpdate, null, 2));
+    
+    // 5. THỰC THI LỆNH UPDATE VỚI DỮ LIỆU ĐÃ ĐƯỢC XÂY DỰNG VÀ LÀM SẠCH
     const updatedProfile = await prisma.profile.update({
-      where: { id: parseInt(id) }, // Đảm bảo ID là number
-      data: dataToUpdate, // Chỉ cập nhật những gì có trong object này
+      where: { id: parseInt(id, 10) }, // Đảm bảo ID là number
+      data: finalDataToUpdate, // Chỉ cập nhật những gì có trong object này (đã loại bỏ id)
       include: {
         workflow: true, // Lấy kèm thông tin workflow sau khi cập nhật
       },
@@ -662,7 +754,7 @@ export const getFingerprint = asyncHandler(async (req: Request, res: Response) =
 
 export const updateFingerprint = asyncHandler(async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
-  const fp = req.body;
+  const { id: _fpId, ...fp } = req.body; // Loại bỏ 'id' nếu có
   const updated = await profileService.updateProfile(id, { fingerprint: fp });
   res.json({ success: true, data: updated.fingerprint });
 });

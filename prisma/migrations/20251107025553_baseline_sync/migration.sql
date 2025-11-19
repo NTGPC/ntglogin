@@ -1,2 +1,0 @@
--- Baseline migration: database already synced via db push
--- This migration marks the current state as applied
