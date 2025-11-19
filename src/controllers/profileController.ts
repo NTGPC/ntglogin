@@ -31,11 +31,20 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
 
 const createSchema = z.object({
   name: z.string().min(1),
+    // NEW V2.0: fingerprintPresetId (ưu tiên)
+    fingerprintPresetId: z.union([z.number().int().positive(), z.string()]).transform((val) => {
+      if (typeof val === 'string') {
+        const num = parseInt(val, 10);
+        return isNaN(num) ? undefined : num;
+      }
+      return val;
+    }).optional(),
+    webglMetadataMode: z.string().optional(), // NEW: Support webglMetadataMode
+  // BACKWARD COMPATIBILITY: Các trường cũ (deprecated)
   user_agent: z.string().optional(),
   fingerprint: z.any().optional(),
-  // new fields are optional (backward compatible)
   userAgent: z.string().optional(),
-  os: z.string().optional(), // Thêm trường os
+  os: z.string().optional(),
   osName: z.string().optional(),
   osArch: z.enum(['x86','x64','arm']).optional(),
   browserVersion: z.number().int().min(130).max(140).optional(),
@@ -244,6 +253,15 @@ function sanitizeProfileData(body: any) {
     })(),
     proxyRefId: body.proxyRefId || null,
     proxyManual: body.proxyManual || null,
+    // NEW V2.0: fingerprintPresetId
+    fingerprintPresetId: (() => {
+      const value = body.fingerprintPresetId;
+      if (!value) return undefined;
+      if (typeof value === 'number') return value;
+      const parsed = parseInt(String(value), 10);
+      return isNaN(parsed) ? undefined : parsed;
+    })(),
+    webglMetadataMode: body.webglMetadataMode || body.webglMetaMode || null,
   };
 
   console.log('[SANITIZE] Dữ liệu đã được làm sạch:', JSON.stringify(sanitized, null, 2));
@@ -274,6 +292,54 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
     if (!cleanData.name) {
       throw new AppError('Name is required', 400);
+    }
+
+    // ==========================================================
+    // === NEW V2.0: XỬ LÝ FINGERPRINT PRESET (ƯU TIÊN CAO NHẤT) ===
+    // ==========================================================
+    let presetData: any = null;
+    if (cleanData.fingerprintPresetId) {
+      try {
+        presetData = await prisma.fingerprintPreset.findUnique({
+          where: { id: cleanData.fingerprintPresetId },
+        });
+        if (presetData) {
+          console.log(`[CREATE] ✅ Loaded Fingerprint Preset: ${presetData.name}`);
+          // Merge preset data vào cleanData (preset là base, body override)
+          Object.assign(cleanData, {
+            userAgent: cleanData.userAgent || presetData.userAgent,
+            platform: cleanData.platform || presetData.platform,
+            uaPlatform: cleanData.uaPlatform || presetData.uaPlatform,
+            uaPlatformVersion: cleanData.uaPlatformVersion || presetData.uaPlatformVersion,
+            uaFullVersion: cleanData.uaFullVersion || presetData.uaFullVersion,
+            uaMobile: cleanData.uaMobile ?? presetData.uaMobile,
+            browserVersion: cleanData.browserVersion || presetData.browserVersion,
+            hardwareConcurrency: cleanData.hardwareConcurrency || presetData.hardwareConcurrency,
+            deviceMemory: cleanData.deviceMemory || presetData.deviceMemory,
+            webglVendor: cleanData.webglVendor || presetData.webglVendor,
+            webglRenderer: cleanData.webglRenderer || presetData.webglRenderer,
+            screenWidth: cleanData.screenWidth || presetData.screenWidth,
+            screenHeight: cleanData.screenHeight || presetData.screenHeight,
+            colorDepth: cleanData.colorDepth || presetData.colorDepth,
+            pixelRatio: cleanData.pixelRatio || presetData.pixelRatio,
+            languages: cleanData.languages || presetData.languages,
+            timezone: cleanData.timezone || presetData.timezone,
+            canvasMode: cleanData.canvasMode || presetData.canvasMode,
+            audioContextMode: cleanData.audioContextMode || presetData.audioContextMode,
+            webglMetadataMode: cleanData.webglMetadataMode || presetData.webglMetadataMode || presetData.webglMetaMode,
+            webrtcMode: cleanData.webrtcMode || presetData.webrtcMode,
+            geolocationMode: cleanData.geolocationMode || presetData.geolocationMode,
+            geolocationLatitude: cleanData.geolocationLatitude || presetData.geolocationLatitude,
+            geolocationLongitude: cleanData.geolocationLongitude || presetData.geolocationLongitude,
+            osName: cleanData.osName || presetData.os,
+            os: cleanData.os || presetData.os,
+          });
+        } else {
+          console.warn(`[CREATE] ⚠️ Fingerprint Preset ID ${cleanData.fingerprintPresetId} not found`);
+        }
+      } catch (error) {
+        console.warn(`[CREATE] ⚠️ Failed to load Fingerprint Preset:`, error);
+      }
     }
 
     // ==========================================================
@@ -407,6 +473,9 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     const profile = await profileService.createProfile({
       // Trường bắt buộc
       name: cleanData.name, // Đã validate ở trên
+      
+      // NEW V2.0: Link với Fingerprint Preset nếu có
+      ...(cleanData.fingerprintPresetId ? { fingerprintPresetId: cleanData.fingerprintPresetId } : {}),
       
       // Các trường đã được sanitize với default values
       platform: cleanData.platform || 'Win32',
@@ -544,9 +613,62 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     console.log(`[UPDATE] Dữ liệu đã được làm sạch:`, JSON.stringify(cleanData, null, 2));
     
     // ==========================================================
+    // === NEW V2.0: XỬ LÝ FINGERPRINT PRESET (ƯU TIÊN CAO NHẤT) ===
+    // ==========================================================
+    let presetData: any = null;
+    if (cleanData.fingerprintPresetId) {
+      try {
+        presetData = await prisma.fingerprintPreset.findUnique({
+          where: { id: cleanData.fingerprintPresetId },
+        });
+        if (presetData) {
+          console.log(`[UPDATE] ✅ Loaded Fingerprint Preset: ${presetData.name}`);
+          // Merge preset data vào cleanData (preset là base, body override)
+          Object.assign(cleanData, {
+            userAgent: cleanData.userAgent || presetData.userAgent,
+            platform: cleanData.platform || presetData.platform,
+            uaPlatform: cleanData.uaPlatform || presetData.uaPlatform,
+            uaPlatformVersion: cleanData.uaPlatformVersion || presetData.uaPlatformVersion,
+            uaFullVersion: cleanData.uaFullVersion || presetData.uaFullVersion,
+            uaMobile: cleanData.uaMobile ?? presetData.uaMobile,
+            browserVersion: cleanData.browserVersion || presetData.browserVersion,
+            hardwareConcurrency: cleanData.hardwareConcurrency || presetData.hardwareConcurrency,
+            deviceMemory: cleanData.deviceMemory || presetData.deviceMemory,
+            webglVendor: cleanData.webglVendor || presetData.webglVendor,
+            webglRenderer: cleanData.webglRenderer || presetData.webglRenderer,
+            screenWidth: cleanData.screenWidth || presetData.screenWidth,
+            screenHeight: cleanData.screenHeight || presetData.screenHeight,
+            colorDepth: cleanData.colorDepth || presetData.colorDepth,
+            pixelRatio: cleanData.pixelRatio || presetData.pixelRatio,
+            languages: cleanData.languages || presetData.languages,
+            timezone: cleanData.timezone || presetData.timezone,
+            canvasMode: cleanData.canvasMode || presetData.canvasMode,
+            audioContextMode: cleanData.audioContextMode || presetData.audioContextMode,
+            webglMetadataMode: cleanData.webglMetadataMode || presetData.webglMetadataMode || presetData.webglMetaMode,
+            webrtcMode: cleanData.webrtcMode || presetData.webrtcMode,
+            geolocationMode: cleanData.geolocationMode || presetData.geolocationMode,
+            geolocationLatitude: cleanData.geolocationLatitude || presetData.geolocationLatitude,
+            geolocationLongitude: cleanData.geolocationLongitude || presetData.geolocationLongitude,
+            osName: cleanData.osName || presetData.os,
+            os: cleanData.os || presetData.os,
+          });
+        } else {
+          console.warn(`[UPDATE] ⚠️ Fingerprint Preset ID ${cleanData.fingerprintPresetId} not found`);
+        }
+      } catch (error) {
+        console.warn(`[UPDATE] ⚠️ Failed to load Fingerprint Preset:`, error);
+      }
+    }
+
+    // ==========================================================
     // === XÂY DỰNG OBJECT CẬP NHẬT ===
     // ==========================================================
     const dataToUpdate: any = {};
+
+    // NEW V2.0: Update fingerprintPresetId if provided
+    if (cleanData.fingerprintPresetId !== undefined) {
+      dataToUpdate.fingerprintPresetId = cleanData.fingerprintPresetId;
+    }
 
     // Chỉ cập nhật các trường có trong cleanData (không undefined)
     if (cleanData.name !== undefined && cleanData.name !== '') {

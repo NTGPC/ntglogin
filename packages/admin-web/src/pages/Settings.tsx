@@ -40,8 +40,27 @@ interface WebglRenderer {
   os?: string
 }
 
+interface FingerprintPreset {
+  id: number
+  name: string
+  description?: string
+  userAgent: string
+  platform: string
+  uaPlatform: string
+  os: string
+  osVersion?: string
+  browserVersion?: number
+  hardwareConcurrency: number
+  deviceMemory: number
+  webglVendor: string
+  webglRenderer: string
+  screenWidth: number
+  screenHeight: number
+  isActive: boolean
+}
+
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'user-agents' | 'webgl-renderers'>('user-agents')
+  const [activeTab, setActiveTab] = useState<'user-agents' | 'webgl-renderers' | 'fingerprint-presets'>('user-agents')
   
   // User Agents state
   const [userAgents, setUserAgents] = useState<UserAgent[]>([])
@@ -68,10 +87,47 @@ export default function Settings() {
     os: 'Windows',
   })
 
+  // Fingerprint Presets state
+  const [presets, setPresets] = useState<FingerprintPreset[]>([])
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false)
+  const [editingPreset, setEditingPreset] = useState<FingerprintPreset | null>(null)
+  const [presetForm, setPresetForm] = useState({
+    name: '',
+    description: '',
+    userAgent: '',
+    platform: 'Win32',
+    uaPlatform: 'Windows',
+    uaPlatformVersion: '',
+    uaFullVersion: '',
+    uaMobile: false,
+    browserVersion: 140,
+    hardwareConcurrency: 8,
+    deviceMemory: 8,
+    webglVendor: '',
+    webglRenderer: '',
+    screenWidth: 1920,
+    screenHeight: 1080,
+    colorDepth: 24,
+    pixelRatio: 1.0,
+    languages: ['en-US', 'en'],
+    timezone: '',
+    canvasMode: 'noise' as 'noise' | 'mask' | 'off',
+    audioContextMode: 'noise' as 'noise' | 'off',
+    webglMetadataMode: 'mask' as 'mask' | 'real',
+    webrtcMode: 'fake' as 'fake' | 'off' | 'real',
+    geolocationMode: 'fake' as 'fake' | 'off' | 'real',
+    geolocationLatitude: undefined as number | undefined,
+    geolocationLongitude: undefined as number | undefined,
+    os: 'Windows',
+    osVersion: '',
+    isActive: true,
+  })
+
   // Load data
   useEffect(() => {
     loadUserAgents()
     loadWebglRenderers()
+    loadPresets()
   }, [])
 
   const loadUserAgents = async () => {
@@ -192,6 +248,115 @@ export default function Settings() {
     }
   }
 
+  // Fingerprint Preset handlers
+  const loadPresets = async () => {
+    try {
+      const data = await api.getFingerprintPresets()
+      setPresets(data)
+    } catch (error) {
+      console.error('Failed to load Fingerprint Presets:', error)
+    }
+  }
+
+  const handleCreatePreset = () => {
+    setEditingPreset(null)
+    setPresetForm({
+      name: '',
+      description: '',
+      userAgent: '',
+      platform: 'Win32',
+      uaPlatform: 'Windows',
+      uaPlatformVersion: '',
+      uaFullVersion: '',
+      uaMobile: false,
+      browserVersion: 140,
+      hardwareConcurrency: 8,
+      deviceMemory: 8,
+      webglVendor: '',
+      webglRenderer: '',
+      screenWidth: 1920,
+      screenHeight: 1080,
+      colorDepth: 24,
+      pixelRatio: 1.0,
+      languages: ['en-US', 'en'],
+      timezone: '',
+      canvasMode: 'noise',
+      audioContextMode: 'noise',
+      webglMetadataMode: 'mask',
+      webrtcMode: 'fake',
+      geolocationMode: 'fake',
+      geolocationLatitude: undefined,
+      geolocationLongitude: undefined,
+      os: 'Windows',
+      osVersion: '',
+      isActive: true,
+    })
+    setPresetDialogOpen(true)
+  }
+
+  const handleEditPreset = (preset: FingerprintPreset) => {
+    setEditingPreset(preset)
+    // Load full preset data
+    api.getFingerprintPresetById(preset.id).then((fullPreset) => {
+      setPresetForm({
+        name: fullPreset.name || '',
+        description: fullPreset.description || '',
+        userAgent: fullPreset.userAgent || '',
+        platform: fullPreset.platform || 'Win32',
+        uaPlatform: fullPreset.uaPlatform || 'Windows',
+        uaPlatformVersion: fullPreset.uaPlatformVersion || '',
+        uaFullVersion: fullPreset.uaFullVersion || '',
+        uaMobile: fullPreset.uaMobile || false,
+        browserVersion: fullPreset.browserVersion || 140,
+        hardwareConcurrency: fullPreset.hardwareConcurrency || 8,
+        deviceMemory: fullPreset.deviceMemory || 8,
+        webglVendor: fullPreset.webglVendor || '',
+        webglRenderer: fullPreset.webglRenderer || '',
+        screenWidth: fullPreset.screenWidth || 1920,
+        screenHeight: fullPreset.screenHeight || 1080,
+        colorDepth: fullPreset.colorDepth || 24,
+        pixelRatio: fullPreset.pixelRatio || 1.0,
+        languages: fullPreset.languages || ['en-US', 'en'],
+        timezone: fullPreset.timezone || '',
+        canvasMode: fullPreset.canvasMode || 'noise',
+        audioContextMode: fullPreset.audioContextMode || 'noise',
+        webglMetadataMode: fullPreset.webglMetadataMode || 'mask',
+        webrtcMode: fullPreset.webrtcMode || 'fake',
+        geolocationMode: fullPreset.geolocationMode || 'fake',
+        geolocationLatitude: fullPreset.geolocationLatitude,
+        geolocationLongitude: fullPreset.geolocationLongitude,
+        os: fullPreset.os || 'Windows',
+        osVersion: fullPreset.osVersion || '',
+        isActive: fullPreset.isActive !== false,
+      })
+      setPresetDialogOpen(true)
+    })
+  }
+
+  const handleSavePreset = async () => {
+    try {
+      if (editingPreset) {
+        await api.updateFingerprintPreset(editingPreset.id, presetForm)
+      } else {
+        await api.createFingerprintPreset(presetForm)
+      }
+      await loadPresets()
+      setPresetDialogOpen(false)
+    } catch (error: any) {
+      alert(error.response?.data?.message || error.message || 'Failed to save Fingerprint Preset')
+    }
+  }
+
+  const handleDeletePreset = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this Fingerprint Preset? This will affect all profiles using it.')) return
+    try {
+      await api.deleteFingerprintPreset(id)
+      await loadPresets()
+    } catch (error: any) {
+      alert(error.response?.data?.message || error.message || 'Failed to delete Fingerprint Preset')
+    }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -219,6 +384,16 @@ export default function Settings() {
           }`}
         >
           WebGL Renderers ({webglRenderers.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('fingerprint-presets')}
+          className={`px-4 py-2 font-medium ${
+            activeTab === 'fingerprint-presets'
+              ? 'border-b-2 border-primary text-primary'
+              : 'text-muted-foreground'
+          }`}
+        >
+          Fingerprint Presets ({presets.length})
         </button>
       </div>
 
@@ -323,6 +498,74 @@ export default function Settings() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleDeleteWebgl(webgl.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* Fingerprint Presets Tab */}
+      {activeTab === 'fingerprint-presets' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button onClick={handleCreatePreset}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Fingerprint Preset
+            </Button>
+          </div>
+
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>OS</TableHead>
+                  <TableHead>Browser</TableHead>
+                  <TableHead>GPU</TableHead>
+                  <TableHead>Screen</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {presets.map((preset) => (
+                  <TableRow key={preset.id}>
+                    <TableCell>{preset.id}</TableCell>
+                    <TableCell className="font-medium">{preset.name}</TableCell>
+                    <TableCell>{preset.os} {preset.osVersion || ''}</TableCell>
+                    <TableCell>Chrome {preset.browserVersion || 'N/A'}</TableCell>
+                    <TableCell className="max-w-xs truncate" title={preset.webglRenderer}>
+                      {preset.webglVendor} - {preset.webglRenderer}
+                    </TableCell>
+                    <TableCell>{preset.screenWidth}x{preset.screenHeight}</TableCell>
+                    <TableCell>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        preset.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {preset.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditPreset(preset)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeletePreset(preset.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -493,6 +736,281 @@ export default function Settings() {
               Cancel
             </Button>
             <Button onClick={handleSaveWebgl}>
+              <Save className="h-4 w-4 mr-2" />
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Fingerprint Preset Dialog */}
+      <Dialog open={presetDialogOpen} onOpenChange={setPresetDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingPreset ? 'Edit Fingerprint Preset' : 'Create Fingerprint Preset'}
+            </DialogTitle>
+            <DialogDescription>
+              A complete fingerprint configuration that ensures 100% consistency across all parameters
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Basic Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="preset-name">Name *</Label>
+                <Input
+                  id="preset-name"
+                  value={presetForm.name}
+                  onChange={(e) => setPresetForm({ ...presetForm, name: e.target.value })}
+                  placeholder="Windows 11 - Chrome 140 - NVIDIA RTX 4080"
+                />
+              </div>
+              <div>
+                <Label htmlFor="preset-os">OS *</Label>
+                <select
+                  id="preset-os"
+                  className="w-full px-3 py-2 border rounded-md"
+                  value={presetForm.os}
+                  onChange={(e) => {
+                    const os = e.target.value
+                    setPresetForm({
+                      ...presetForm,
+                      os,
+                      platform: os === 'Windows' ? 'Win32' : os === 'macOS' ? 'MacIntel' : 'Linux x86_64',
+                      uaPlatform: os === 'Windows' ? 'Windows' : os === 'macOS' ? 'macOS' : 'Linux',
+                    })
+                  }}
+                >
+                  <option value="Windows">Windows</option>
+                  <option value="Windows 10">Windows 10</option>
+                  <option value="Windows 11">Windows 11</option>
+                  <option value="macOS">macOS</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="preset-description">Description</Label>
+              <Input
+                id="preset-description"
+                value={presetForm.description}
+                onChange={(e) => setPresetForm({ ...presetForm, description: e.target.value })}
+                placeholder="High-end Windows 11 configuration with NVIDIA GPU"
+              />
+            </div>
+
+            {/* User Agent */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold mb-2">User Agent & Client Hints</h3>
+              <div className="space-y-2">
+                <div>
+                  <Label htmlFor="preset-ua">User Agent *</Label>
+                  <Input
+                    id="preset-ua"
+                    value={presetForm.userAgent}
+                    onChange={(e) => setPresetForm({ ...presetForm, userAgent: e.target.value })}
+                    placeholder="Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <Label htmlFor="preset-platform">Platform *</Label>
+                    <Input
+                      id="preset-platform"
+                      value={presetForm.platform}
+                      onChange={(e) => setPresetForm({ ...presetForm, platform: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="preset-ua-platform">UA Platform *</Label>
+                    <Input
+                      id="preset-ua-platform"
+                      value={presetForm.uaPlatform}
+                      onChange={(e) => setPresetForm({ ...presetForm, uaPlatform: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="preset-browser-version">Browser Version</Label>
+                    <Input
+                      id="preset-browser-version"
+                      type="number"
+                      min="130"
+                      max="140"
+                      value={presetForm.browserVersion}
+                      onChange={(e) => setPresetForm({ ...presetForm, browserVersion: parseInt(e.target.value) || 140 })}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hardware */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold mb-2">Hardware & Graphics</h3>
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <Label htmlFor="preset-cpu-cores">CPU Cores *</Label>
+                  <Input
+                    id="preset-cpu-cores"
+                    type="number"
+                    min="1"
+                    max="64"
+                    value={presetForm.hardwareConcurrency}
+                    onChange={(e) => setPresetForm({ ...presetForm, hardwareConcurrency: parseInt(e.target.value) || 8 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="preset-ram">RAM (GB) *</Label>
+                  <Input
+                    id="preset-ram"
+                    type="number"
+                    min="1"
+                    max="128"
+                    value={presetForm.deviceMemory}
+                    onChange={(e) => setPresetForm({ ...presetForm, deviceMemory: parseInt(e.target.value) || 8 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="preset-webgl-vendor">WebGL Vendor *</Label>
+                  <Input
+                    id="preset-webgl-vendor"
+                    value={presetForm.webglVendor}
+                    onChange={(e) => setPresetForm({ ...presetForm, webglVendor: e.target.value })}
+                    placeholder="NVIDIA Corporation"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="preset-webgl-renderer">WebGL Renderer *</Label>
+                  <Input
+                    id="preset-webgl-renderer"
+                    value={presetForm.webglRenderer}
+                    onChange={(e) => setPresetForm({ ...presetForm, webglRenderer: e.target.value })}
+                    placeholder="NVIDIA GeForce RTX 4080"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Screen */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold mb-2">Screen & Display</h3>
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <Label htmlFor="preset-width">Width *</Label>
+                  <Input
+                    id="preset-width"
+                    type="number"
+                    value={presetForm.screenWidth}
+                    onChange={(e) => setPresetForm({ ...presetForm, screenWidth: parseInt(e.target.value) || 1920 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="preset-height">Height *</Label>
+                  <Input
+                    id="preset-height"
+                    type="number"
+                    value={presetForm.screenHeight}
+                    onChange={(e) => setPresetForm({ ...presetForm, screenHeight: parseInt(e.target.value) || 1080 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="preset-color-depth">Color Depth</Label>
+                  <Input
+                    id="preset-color-depth"
+                    type="number"
+                    value={presetForm.colorDepth}
+                    onChange={(e) => setPresetForm({ ...presetForm, colorDepth: parseInt(e.target.value) || 24 })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="preset-pixel-ratio">Pixel Ratio</Label>
+                  <Input
+                    id="preset-pixel-ratio"
+                    type="number"
+                    step="0.1"
+                    value={presetForm.pixelRatio}
+                    onChange={(e) => setPresetForm({ ...presetForm, pixelRatio: parseFloat(e.target.value) || 1.0 })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Spoofing Modes */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold mb-2">Spoofing Modes</h3>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label htmlFor="preset-canvas">Canvas Mode *</Label>
+                  <select
+                    id="preset-canvas"
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={presetForm.canvasMode}
+                    onChange={(e) => setPresetForm({ ...presetForm, canvasMode: e.target.value as any })}
+                  >
+                    <option value="noise">Noise</option>
+                    <option value="mask">Mask</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="preset-audio">Audio Context Mode *</Label>
+                  <select
+                    id="preset-audio"
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={presetForm.audioContextMode}
+                    onChange={(e) => setPresetForm({ ...presetForm, audioContextMode: e.target.value as any })}
+                  >
+                    <option value="noise">Noise</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="preset-webgl-meta">WebGL Metadata *</Label>
+                  <select
+                    id="preset-webgl-meta"
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={presetForm.webglMetadataMode}
+                    onChange={(e) => setPresetForm({ ...presetForm, webglMetadataMode: e.target.value as any })}
+                  >
+                    <option value="mask">Mask</option>
+                    <option value="real">Real</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="preset-webrtc">WebRTC Mode *</Label>
+                  <select
+                    id="preset-webrtc"
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={presetForm.webrtcMode}
+                    onChange={(e) => setPresetForm({ ...presetForm, webrtcMode: e.target.value as any })}
+                  >
+                    <option value="fake">Fake</option>
+                    <option value="off">Off</option>
+                    <option value="real">Real</option>
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="preset-geo">Geolocation Mode *</Label>
+                  <select
+                    id="preset-geo"
+                    className="w-full px-3 py-2 border rounded-md"
+                    value={presetForm.geolocationMode}
+                    onChange={(e) => setPresetForm({ ...presetForm, geolocationMode: e.target.value as any })}
+                  >
+                    <option value="fake">Fake</option>
+                    <option value="off">Off</option>
+                    <option value="real">Real</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPresetDialogOpen(false)}>
+              <X className="h-4 w-4 mr-2" />
+              Cancel
+            </Button>
+            <Button onClick={handleSavePreset}>
               <Save className="h-4 w-4 mr-2" />
               Save
             </Button>

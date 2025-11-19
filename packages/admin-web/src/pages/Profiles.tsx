@@ -175,6 +175,8 @@ export default function Profiles() {
   const [userAgents, setUserAgents] = useState<any[]>([])
   const [webglRenderers, setWebglRenderers] = useState<any[]>([])
   const [webrtcMainIP, setWebrtcMainIP] = useState(true)
+  const [fingerprintPresets, setFingerprintPresets] = useState<any[]>([])
+  const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null)
   const [proxyMode, setProxyMode] = useState<'manual' | 'library'>('manual')
   const [proxyManual, setProxyManual] = useState<{ host?: string; port?: number; username?: string; password?: string }>({})
   const [proxyRefId, setProxyRefId] = useState<string>('')
@@ -221,7 +223,51 @@ export default function Profiles() {
     if (SHOW_WORKFLOWS) loadAssignments()
     loadUserAgents()
     loadWebglRenderers()
+    loadFingerprintPresets()
   }, [])
+
+  const loadFingerprintPresets = async () => {
+    try {
+      const data = await api.getFingerprintPresets()
+      setFingerprintPresets(data)
+    } catch (error) {
+      console.error('Failed to load Fingerprint Presets:', error)
+    }
+  }
+
+  const handlePresetChange = async (presetId: number | null) => {
+    setSelectedPresetId(presetId)
+    if (!presetId) return
+
+    try {
+      const preset = await api.getFingerprintPresetById(presetId)
+      if (!preset) return
+
+      // Populate all form fields from preset
+      const input = document.getElementById('user_agent') as HTMLInputElement | null
+      if (input) input.value = preset.userAgent || ''
+      
+      setOsName(preset.os || 'Windows')
+      setBrowserVersion(preset.browserVersion ? String(preset.browserVersion) : 'Auto')
+      setScreenRes(`${preset.screenWidth || 1920}x${preset.screenHeight || 1080}`)
+      setWebglVendor(preset.webglVendor || '')
+      setWebglRenderer(preset.webglRenderer || '')
+      setHardwareConcurrency(preset.hardwareConcurrency || 8)
+      setDeviceMemory(preset.deviceMemory || 8)
+      setLanguages(preset.languages || ['en-US', 'en'])
+      setTimezone(preset.timezone || 'Europe/London')
+      setCanvasMode(preset.canvasMode === 'noise' ? 'Noise' : preset.canvasMode === 'mask' ? 'Noise' : 'Off')
+      setAudioCtxMode(preset.audioContextMode === 'noise' ? 'Noise' : 'Off')
+      setWebglMetaMode(preset.webglMetadataMode === 'mask' ? 'Mask' : 'Real')
+      setWebrtcMainIP(preset.webrtcMode === 'fake')
+      setGeoEnabled(preset.geolocationMode === 'fake')
+      
+      console.log('[Profiles] Preset loaded:', preset.name)
+    } catch (error) {
+      console.error('Failed to load preset:', error)
+      alert('Failed to load preset')
+    }
+  }
 
   const loadUserAgents = async () => {
     try {
@@ -783,6 +829,12 @@ export default function Profiles() {
       }
 
       const payload: any = { name: data.name }
+      
+      // NEW V2.0: If preset is selected, use fingerprintPresetId (highest priority)
+      if (selectedPresetId) {
+        payload.fingerprintPresetId = selectedPresetId
+      }
+      
       // UA: nếu người dùng không sửa → để trống để BE auto-random
       if (uaEditable && data.user_agent) payload.user_agent = data.user_agent
       
@@ -1210,6 +1262,28 @@ export default function Profiles() {
                   <p className="text-sm text-destructive">{errors.name.message}</p>
                 )}
               </div>
+              
+              {/* Fingerprint Preset Selector */}
+              <div className="space-y-2">
+                <Label htmlFor="fingerprint-preset">Fingerprint Preset (Optional)</Label>
+                <select
+                  id="fingerprint-preset"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedPresetId || ''}
+                  onChange={(e) => handlePresetChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                >
+                  <option value="">-- Select a Preset to auto-fill all fields --</option>
+                  {fingerprintPresets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name} ({preset.os} - Chrome {preset.browserVersion || 'N/A'})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Select a preset to automatically populate all fingerprint parameters. You can still modify individual fields after selection.
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="user_agent">User Agent</Label>
                 <div className="space-y-2">

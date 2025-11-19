@@ -31,6 +31,7 @@ const requireAuth = enableAuth
   : (_req: any, _res: any, next: any) => next(); // Skip auth (development mode)
 
 router.use('/profiles', requireAuth, profileRoutes);
+router.use('/fingerprint-presets', requireAuth, require('./fingerprintPresetRoutes').default);
 router.use('/proxies', requireAuth, proxyRoutes);
 router.use('/sessions', requireAuth, sessionRoutes);
 router.use('/jobs', requireAuth, jobRoutes);

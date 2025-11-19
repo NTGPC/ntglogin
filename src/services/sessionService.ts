@@ -26,13 +26,55 @@ export const createSession = async (data: {
   status?: string;
   meta?: any;
 }) => {
-  // Get profile and proxy data
+  // Get profile and proxy data (include preset relation)
   const profile = await prisma.profile.findUnique({
     where: { id: data.profile_id },
+    include: {
+      fingerprintPreset: true,
+      userAgentRef: true,
+      webglRendererRef: true,
+    },
   });
 
   if (!profile) {
     throw new Error('Profile not found');
+  }
+
+  // NEW V2.0: Merge preset data into profile if preset exists
+  let enrichedProfile: any = { ...profile };
+  if (profile.fingerprintPreset) {
+    const preset = profile.fingerprintPreset;
+    console.log(`[Session] ✅ Merging Fingerprint Preset: ${preset.name}`);
+    // Preset data takes precedence (it's the "source of truth")
+    enrichedProfile = {
+      ...enrichedProfile,
+      userAgent: enrichedProfile.userAgent || preset.userAgent,
+      platform: enrichedProfile.platform || preset.platform,
+      uaPlatform: enrichedProfile.uaPlatform || preset.uaPlatform,
+      uaPlatformVersion: enrichedProfile.uaPlatformVersion || preset.uaPlatformVersion,
+      uaFullVersion: enrichedProfile.uaFullVersion || preset.uaFullVersion,
+      uaMobile: enrichedProfile.uaMobile ?? preset.uaMobile,
+      browserVersion: enrichedProfile.browserVersion || preset.browserVersion,
+      hardwareConcurrency: enrichedProfile.hardwareConcurrency || preset.hardwareConcurrency,
+      deviceMemory: enrichedProfile.deviceMemory || preset.deviceMemory,
+      webglVendor: enrichedProfile.webglVendor || preset.webglVendor,
+      webglRenderer: enrichedProfile.webglRenderer || preset.webglRenderer,
+      screenWidth: enrichedProfile.screenWidth || preset.screenWidth,
+      screenHeight: enrichedProfile.screenHeight || preset.screenHeight,
+      colorDepth: enrichedProfile.colorDepth || preset.colorDepth,
+      pixelRatio: enrichedProfile.pixelRatio || preset.pixelRatio,
+      languages: enrichedProfile.languages || preset.languages,
+      timezone: enrichedProfile.timezone || preset.timezone,
+      canvasMode: enrichedProfile.canvasMode || preset.canvasMode,
+      audioContextMode: enrichedProfile.audioContextMode || preset.audioContextMode,
+      webglMetadataMode: enrichedProfile.webglMetadataMode || preset.webglMetadataMode,
+      webrtcMode: enrichedProfile.webrtcMode || preset.webrtcMode,
+      geolocationMode: enrichedProfile.geolocationMode || preset.geolocationMode,
+      geolocationLatitude: enrichedProfile.geolocationLatitude || preset.geolocationLatitude,
+      geolocationLongitude: enrichedProfile.geolocationLongitude || preset.geolocationLongitude,
+      osName: enrichedProfile.osName || preset.os,
+      os: enrichedProfile.os || preset.os,
+    };
   }
 
   let proxy = null;
@@ -136,75 +178,76 @@ export const createSession = async (data: {
       }
     }
 
-    // Build fingerprint from profile data
-    let fingerprint: any = profile.fingerprintJson || profile.fingerprint
-    if (!fingerprint && (profile.canvasMode || profile.osName)) {
+    // Build fingerprint from enriched profile data (includes preset if available)
+    let fingerprint: any = enrichedProfile.fingerprintJson || enrichedProfile.fingerprint
+    if (!fingerprint && (enrichedProfile.canvasMode || enrichedProfile.osName)) {
       const { build: buildFingerprint } = await import('./fingerprintService')
       fingerprint = buildFingerprint({
-        osName: profile.osName as any,
-        osArch: (profile.osArch as any) || 'x64',
-        browserVersion: profile.browserVersion || 136,
-        screenWidth: profile.screenWidth ?? 1920,
-        screenHeight: profile.screenHeight ?? 1080,
-        canvasMode: (profile.canvasMode || 'Noise') as 'Noise' | 'Off' | 'Block',
-        clientRectsMode: (profile.clientRectsMode || 'Off') as 'Off' | 'Noise',
-        audioCtxMode: (profile.audioCtxMode || 'Off') as 'Off' | 'Noise',
-        webglImageMode: (profile.webglImageMode || 'Off') as 'Off' | 'Noise',
-        webglMetaMode: (profile.webglMetaMode || 'Mask') as 'Mask' | 'Real',
-        geoEnabled: profile.geoEnabled ?? false,
-        geoLatitude: (profile as any).geoLatitude,
-        geoLongitude: (profile as any).geoLongitude,
-        webrtcMainIP: profile.webrtcMainIP ?? false,
-        proxyRefId: profile.proxyRefId ?? null,
-        proxyManual: (profile.proxyManual as any) ?? null,
-        ua: profile.user_agent || profile.userAgent || '',
-        mac: profile.macAddress || '',
-        timezoneId: (profile as any).timezoneId,
-        language: (profile as any).language,
-        hardwareConcurrency: (profile as any).hardwareConcurrency,
-        deviceMemory: (profile as any).deviceMemory,
-        profileId: profile.id,
-        seed: profile.id,
+        osName: enrichedProfile.osName as any,
+        osArch: (enrichedProfile.osArch as any) || 'x64',
+        browserVersion: enrichedProfile.browserVersion || 136,
+        screenWidth: enrichedProfile.screenWidth ?? 1920,
+        screenHeight: enrichedProfile.screenHeight ?? 1080,
+        canvasMode: (enrichedProfile.canvasMode || 'Noise') as 'Noise' | 'Off' | 'Block',
+        clientRectsMode: (enrichedProfile.clientRectsMode || 'Off') as 'Off' | 'Noise',
+        audioCtxMode: (enrichedProfile.audioContextMode || 'Off') as 'Off' | 'Noise',
+        webglImageMode: (enrichedProfile.webglImageMode || 'Off') as 'Off' | 'Noise',
+        webglMetaMode: (enrichedProfile.webglMetadataMode || 'Mask') as 'Mask' | 'Real',
+        geoEnabled: enrichedProfile.geoEnabled ?? (enrichedProfile.geolocationMode === 'fake'),
+        geoLatitude: enrichedProfile.geolocationLatitude || (enrichedProfile as any).geoLatitude,
+        geoLongitude: enrichedProfile.geolocationLongitude || (enrichedProfile as any).geoLongitude,
+        webrtcMainIP: enrichedProfile.webrtcMainIP ?? (enrichedProfile.webrtcMode === 'fake'),
+        proxyRefId: enrichedProfile.proxyRefId ?? null,
+        proxyManual: (enrichedProfile.proxyManual as any) ?? null,
+        ua: enrichedProfile.user_agent || enrichedProfile.userAgent || '',
+        mac: enrichedProfile.macAddress || '',
+        timezoneId: enrichedProfile.timezone || (enrichedProfile as any).timezoneId,
+        language: (enrichedProfile as any).language || (enrichedProfile.languages?.[0]),
+        hardwareConcurrency: enrichedProfile.hardwareConcurrency || 8,
+        deviceMemory: enrichedProfile.deviceMemory || 8,
+        profileId: enrichedProfile.id,
+        seed: enrichedProfile.id,
       })
     } else if (fingerprint && !fingerprint.seed) {
       // Ensure fingerprint has seed for deterministic noise
       fingerprint = {
         ...fingerprint,
-        profileId: profile.id,
-        seed: fingerprint.seed || profile.id,
+        profileId: enrichedProfile.id,
+        seed: fingerprint.seed || enrichedProfile.id,
       }
     }
 
     // NEW (Chặng 3): Try Electron first, fallback to Playwright/Puppeteer
+    // Use enrichedProfile (includes preset data) instead of raw profile
     const useElectron = process.env.USE_ELECTRON !== 'false' // Default to true, can disable with USE_ELECTRON=false
     if (useElectron) {
       try {
         const { launchProfileWithElectron } = await import('./electronBrowserService')
-        await launchProfileWithElectron(profile)
-        console.log(`✅ [Session ${session.id}] Browser launched via Electron for profile ${profile.id}`)
+        await launchProfileWithElectron(enrichedProfile)
+        console.log(`✅ [Session ${session.id}] Browser launched via Electron for profile ${enrichedProfile.id}`)
       } catch (electronError: any) {
         console.warn(`⚠️ [Session ${session.id}] Electron launch failed, falling back to Playwright:`, electronError.message)
         // Fallback to Playwright/Puppeteer
         const { launchBrowser } = await import('./browserService')
         await launchBrowser({
-          profileId: profile.id,
+          profileId: enrichedProfile.id,
           sessionId: session.id,
-          userAgent: profile.user_agent || profile.userAgent || undefined,
+          userAgent: enrichedProfile.user_agent || enrichedProfile.userAgent || undefined,
           fingerprint: fingerprint,
           proxy: proxyConfig,
-          profile: profile, // Pass full profile object
+          profile: enrichedProfile, // Pass enriched profile (includes preset data)
         })
       }
     } else {
       // Use Playwright/Puppeteer directly
       const { launchBrowser } = await import('./browserService')
       await launchBrowser({
-        profileId: profile.id,
+        profileId: enrichedProfile.id,
         sessionId: session.id,
-        userAgent: profile.user_agent || profile.userAgent || undefined,
+        userAgent: enrichedProfile.user_agent || enrichedProfile.userAgent || undefined,
         fingerprint: fingerprint,
         proxy: proxyConfig,
-        profile: profile,
+        profile: enrichedProfile, // Pass enriched profile (includes preset data)
       })
     }
 

@@ -23,7 +23,67 @@ model User {
 }
 
 // ==========================================================
-// === BẢNG THƯ VIỆN USER AGENTS ===
+// === BẢNG FINGERPRINT PRESET - TRUNG TÂM CỦA HỆ THỐNG ===
+// ==========================================================
+// Mỗi Preset là một "máy tính ảo" hoàn chỉnh, đảm bảo nhất quán 100%
+model FingerprintPreset {
+  id                  Int       @id @default(autoincrement())
+  name                String    @unique // Ví dụ: "Windows 11 - Chrome 140 - NVIDIA RTX 4080"
+  description         String?   // Mô tả chi tiết
+  
+  // === NAVIGATOR & CLIENT HINTS ===
+  userAgent           String    // User Agent string đầy đủ
+  platform            String    // "Win32" | "MacIntel" | "Linux x86_64"
+  uaPlatform          String    // "Windows" | "macOS" | "Linux"
+  uaPlatformVersion   String?   // "10.0.0" | "13.0.0"
+  uaFullVersion       String?   // "140.0.6099.71"
+  uaMobile            Boolean   @default(false)
+  browserVersion      Int?      // 130-140
+  
+  // === HARDWARE & GRAPHICS ===
+  hardwareConcurrency Int       @default(8) // CPU cores
+  deviceMemory        Int       @default(8) // RAM (GB)
+  webglVendor         String    // "NVIDIA Corporation" | "Intel Inc." | "Apple Inc."
+  webglRenderer       String    // "NVIDIA GeForce RTX 4080/PCIe/SSE2" | "Apple M2"
+  
+  // === SCREEN & DISPLAY ===
+  screenWidth         Int       @default(1920)
+  screenHeight        Int       @default(1080)
+  colorDepth          Int       @default(24)
+  pixelRatio          Float     @default(1.0)
+  
+  // === LOCALIZATION ===
+  languages           String[]  @default(["en-US", "en"])
+  timezone            String?   // IANA timezone: "Europe/London" | "America/New_York"
+  
+  // === SPOOFING MODES ===
+  canvasMode          String    @default("noise") // "noise" | "mask" | "off"
+  audioContextMode    String    @default("noise") // "noise" | "off"
+  webglMetadataMode   String    @default("mask")  // "mask" | "real"
+  webrtcMode          String    @default("fake")  // "fake" | "off" | "real"
+  geolocationMode     String    @default("fake")  // "fake" | "off" | "real"
+  
+  // === SPOOFED DATA ===
+  geolocationLatitude  Float?
+  geolocationLongitude Float?
+  
+  // === METADATA ===
+  os                  String    // "Windows" | "macOS" | "Linux"
+  osVersion           String?   // "11" | "14" | "Ubuntu 22.04"
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  // === RELATIONS ===
+  profiles            Profile[]
+  
+  @@index([os])
+  @@index([isActive])
+  @@map("fingerprint_presets")
+}
+
+// ==========================================================
+// === BẢNG THƯ VIỆN USER AGENTS (DEPRECATED - Giữ để backward compatibility) ===
 // ==========================================================
 model UserAgent {
   id                Int       @id @default(autoincrement())
@@ -47,7 +107,7 @@ model UserAgent {
 }
 
 // ==========================================================
-// === BẢNG THƯ VIỆN CARD ĐỒ HỌA (WebGL) ===
+// === BẢNG THƯ VIỆN CARD ĐỒ HỌA (WebGL) (DEPRECATED - Giữ để backward compatibility) ===
 // ==========================================================
 model WebglRenderer {
   id        Int       @id @default(autoincrement())
@@ -73,13 +133,17 @@ model Profile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // === QUAN HỆ VỚI FINGERPRINT PRESET (NEW - V2.0) ===
+  fingerprintPresetId Int?
+  fingerprintPreset   FingerprintPreset? @relation(fields: [fingerprintPresetId], references: [id], onDelete: SetNull)
+
   // === NAVIGATOR & CLIENT HINTS (CỰC KỲ QUAN TRỌNG) ===
   // NEW: Sử dụng quan hệ với thư viện
   userAgentId         Int?     // ID từ bảng UserAgent
   userAgentRef         UserAgent? @relation(fields: [userAgentId], references: [id], onDelete: SetNull)
   
   // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
-  userAgent           String?  @unique // User Agent string (deprecated: use userAgentId)
+  userAgent           String?  @unique // User Agent string (deprecated: use fingerprintPresetId)
   platform            String   @default("Win32") // Giá trị cho navigator.platform (ví dụ: "Win32", "MacIntel")
   
   // === CLIENT HINTS HEADERS (QUAN TRỌNG ĐỂ NHẤT QUÁN) ===
@@ -162,6 +226,7 @@ model Profile {
   @@index([userAgent])
   @@index([userAgentId])
   @@index([webglRendererId])
+  @@index([fingerprintPresetId])
   @@map("profiles")
 }
 

@@ -543,5 +543,84 @@ export const api = {
   async deleteWebglRendererLibrary(id: number): Promise<void> {
     await apiClient.delete(`/api/webgl-renderers/${id}`)
   },
+
+  // === FINGERPRINT PRESET LIBRARY ===
+  async getFingerprintPresets(params?: { os?: string }): Promise<any[]> {
+    try {
+      const queryParams = new URLSearchParams()
+      if (params?.os) queryParams.append('os', params.os)
+      
+      const url = `/api/fingerprint-presets${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      const response = await apiClient.get(url)
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to get Fingerprint Presets:', error)
+      return []
+    }
+  },
+
+  async getFingerprintPresetById(id: number): Promise<any> {
+    try {
+      const response = await apiClient.get(`/api/fingerprint-presets/${id}`)
+      return response.data.data || response.data
+    } catch (error: any) {
+      console.error('Failed to get Fingerprint Preset by ID:', error)
+      throw error
+    }
+  },
+
+  async getFingerprintPresetsByOS(os: string): Promise<any[]> {
+    try {
+      const response = await apiClient.get(`/api/fingerprint-presets/os/${os}`)
+      return response.data.data || response.data || []
+    } catch (error: any) {
+      console.error('Failed to get Fingerprint Presets by OS:', error)
+      return []
+    }
+  },
+
+  async createFingerprintPreset(data: {
+    name: string
+    description?: string
+    userAgent: string
+    platform: string
+    uaPlatform: string
+    uaPlatformVersion?: string
+    uaFullVersion?: string
+    uaMobile?: boolean
+    browserVersion?: number
+    hardwareConcurrency: number
+    deviceMemory: number
+    webglVendor: string
+    webglRenderer: string
+    screenWidth: number
+    screenHeight: number
+    colorDepth: number
+    pixelRatio: number
+    languages: string[]
+    timezone?: string
+    canvasMode: string
+    audioContextMode: string
+    webglMetadataMode: string
+    webrtcMode: string
+    geolocationMode: string
+    geolocationLatitude?: number
+    geolocationLongitude?: number
+    os: string
+    osVersion?: string
+    isActive?: boolean
+  }): Promise<any> {
+    const response = await apiClient.post('/api/fingerprint-presets', data)
+    return response.data.data || response.data
+  },
+
+  async updateFingerprintPreset(id: number, data: Partial<any>): Promise<any> {
+    const response = await apiClient.patch(`/api/fingerprint-presets/${id}`, data)
+    return response.data.data || response.data
+  },
+
+  async deleteFingerprintPreset(id: number): Promise<void> {
+    await apiClient.delete(`/api/fingerprint-presets/${id}`)
+  },
 }
 
