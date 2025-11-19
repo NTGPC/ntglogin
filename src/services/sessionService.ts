@@ -175,14 +175,24 @@ export const createSession = async (data: {
       }
     }
 
-    // Default: use local Puppeteer (ensures proxy username/password are applied)
-    await launchBrowser({
-      profileId: profile.id,
-      sessionId: session.id,
-      userAgent: profile.user_agent || profile.userAgent || undefined,
-      fingerprint: fingerprint,
-      proxy: proxyConfig,
-    });
+    // NEW (Chặng 3): Try Electron first, fallback to Playwright/Puppeteer
+    try {
+      const { launchProfileWithElectron } = await import('./electronBrowserService')
+      await launchProfileWithElectron(profile)
+      console.log(`✅ [Session ${session.id}] Browser launched via Electron for profile ${profile.id}`)
+    } catch (electronError: any) {
+      console.warn(`⚠️ [Session ${session.id}] Electron launch failed, falling back to Playwright:`, electronError.message)
+      // Fallback to Playwright/Puppeteer
+      const { launchBrowser } = await import('./browserService')
+      await launchBrowser({
+        profileId: profile.id,
+        sessionId: session.id,
+        userAgent: profile.user_agent || profile.userAgent || undefined,
+        fingerprint: fingerprint,
+        proxy: proxyConfig,
+        profile: profile, // Pass full profile object
+      })
+    }
 
     console.log(`✅ [Session ${session.id}] Browser launched successfully for profile ${profile.id}`);
   } catch (error: any) {
