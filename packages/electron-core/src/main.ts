@@ -47,6 +47,9 @@ interface ProfileConfig {
 const profileWindows = new Map<number, BrowserWindow>()
 
 export async function launchProfileWindow(profile: ProfileConfig): Promise<BrowserWindow> {
+  // Ensure Electron app is ready
+  await ensureAppReady()
+  
   console.log(`[Electron] Launching profile ${profile.id}: ${profile.name}`)
 
   // Close existing window for this profile if any

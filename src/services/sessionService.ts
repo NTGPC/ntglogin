@@ -176,13 +176,27 @@ export const createSession = async (data: {
     }
 
     // NEW (Chặng 3): Try Electron first, fallback to Playwright/Puppeteer
-    try {
-      const { launchProfileWithElectron } = await import('./electronBrowserService')
-      await launchProfileWithElectron(profile)
-      console.log(`✅ [Session ${session.id}] Browser launched via Electron for profile ${profile.id}`)
-    } catch (electronError: any) {
-      console.warn(`⚠️ [Session ${session.id}] Electron launch failed, falling back to Playwright:`, electronError.message)
-      // Fallback to Playwright/Puppeteer
+    const useElectron = process.env.USE_ELECTRON !== 'false' // Default to true, can disable with USE_ELECTRON=false
+    if (useElectron) {
+      try {
+        const { launchProfileWithElectron } = await import('./electronBrowserService')
+        await launchProfileWithElectron(profile)
+        console.log(`✅ [Session ${session.id}] Browser launched via Electron for profile ${profile.id}`)
+      } catch (electronError: any) {
+        console.warn(`⚠️ [Session ${session.id}] Electron launch failed, falling back to Playwright:`, electronError.message)
+        // Fallback to Playwright/Puppeteer
+        const { launchBrowser } = await import('./browserService')
+        await launchBrowser({
+          profileId: profile.id,
+          sessionId: session.id,
+          userAgent: profile.user_agent || profile.userAgent || undefined,
+          fingerprint: fingerprint,
+          proxy: proxyConfig,
+          profile: profile, // Pass full profile object
+        })
+      }
+    } else {
+      // Use Playwright/Puppeteer directly
       const { launchBrowser } = await import('./browserService')
       await launchBrowser({
         profileId: profile.id,
@@ -190,7 +204,7 @@ export const createSession = async (data: {
         userAgent: profile.user_agent || profile.userAgent || undefined,
         fingerprint: fingerprint,
         proxy: proxyConfig,
-        profile: profile, // Pass full profile object
+        profile: profile,
       })
     }
 

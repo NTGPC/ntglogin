@@ -1,4 +1,18 @@
-import { launchProfileWindow, closeProfileWindow, getProfileWindow } from '../../packages/electron-core/src/main'
+// Dynamic import to avoid loading Electron in non-Electron environments
+let electronMain: any = null
+
+async function getElectronMain() {
+  if (!electronMain) {
+    try {
+      electronMain = await import('../../packages/electron-core/src/main')
+    } catch (error) {
+      console.error('[Electron Browser] Failed to load Electron main:', error)
+      throw new Error('Electron is not available. Please install: npm install electron')
+    }
+  }
+  return electronMain
+}
+
 import type { BrowserWindow } from 'electron'
 
 interface ProfileConfig {
@@ -43,6 +57,7 @@ const electronWindows = new Map<number, BrowserWindow>()
  * This replaces Playwright/Puppeteer with native Electron for deeper control
  */
 export async function launchProfileWithElectron(profile: any): Promise<BrowserWindow> {
+  const { launchProfileWindow } = await getElectronMain()
   console.log(`[Electron Browser] Launching profile ${profile.id}: ${profile.name}`)
 
   // Map profile from database to Electron config
@@ -84,6 +99,12 @@ export async function launchProfileWithElectron(profile: any): Promise<BrowserWi
   // Launch Electron window
   const win = await launchProfileWindow(config)
   electronWindows.set(profile.id, win)
+  
+  // Navigate to a default page after window is ready
+  win.webContents.once('did-finish-load', () => {
+    // Optionally navigate to a test page
+    // win.loadURL('https://pixelscan.net/fingerprint-check/')
+  })
 
   console.log(`[Electron Browser] ✅ Profile ${profile.id} launched successfully`)
   return win
@@ -93,6 +114,7 @@ export async function launchProfileWithElectron(profile: any): Promise<BrowserWi
  * Close Electron browser window for a profile
  */
 export async function closeElectronProfile(profileId: number): Promise<void> {
+  const { closeProfileWindow } = await getElectronMain()
   closeProfileWindow(profileId)
   electronWindows.delete(profileId)
   console.log(`[Electron Browser] ✅ Closed profile ${profileId}`)
@@ -101,7 +123,8 @@ export async function closeElectronProfile(profileId: number): Promise<void> {
 /**
  * Get Electron window for a profile
  */
-export function getElectronWindow(profileId: number): BrowserWindow | undefined {
+export async function getElectronWindow(profileId: number): Promise<BrowserWindow | undefined> {
+  const { getProfileWindow } = await getElectronMain()
   return getProfileWindow(profileId)
 }
 
