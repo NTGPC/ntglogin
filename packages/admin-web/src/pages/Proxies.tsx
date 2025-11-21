@@ -144,10 +144,21 @@ export default function Proxies() {
       reset()
       loadProxies()
       setTimeout(() => setFeedback(null), 3000)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save proxy:', error)
-      setFeedback({ type: 'error', message: 'Failed to save proxy' })
-      setTimeout(() => setFeedback(null), 4000)
+      let errorMessage = 'Failed to save proxy'
+      
+      // Provide more specific error messages
+      if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message
+      } else if (error?.message) {
+        errorMessage = error.message
+      } else if (error?.code === 'ECONNREFUSED' || error?.message?.includes('Network Error')) {
+        errorMessage = 'Cannot connect to backend server. Please ensure backend is running on port 3000.'
+      }
+      
+      setFeedback({ type: 'error', message: errorMessage })
+      setTimeout(() => setFeedback(null), 5000)
     }
   }
   const checkOne = async (id: number) => {

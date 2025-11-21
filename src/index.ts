@@ -21,10 +21,24 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
   origin: ['http://localhost:5175', 'http://127.0.0.1:5175', 'http://localhost:5177', 'http://127.0.0.1:5177'],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(express.json({ limit: '10mb' })); // Parse JSON bodies with larger limit
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded bodies
 app.use(morgan('dev')); // HTTP request logger
+
+// Request logging middleware for debugging
+app.use((req, res, next) => {
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+    console.log(`[${req.method}] ${req.path}`, {
+      body: req.body,
+      query: req.query,
+      params: req.params,
+    });
+  }
+  next();
+});
 
 // Routes
 app.use('/api', routes);

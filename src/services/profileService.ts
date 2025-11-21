@@ -33,10 +33,20 @@ export const getProfileById = async (id: number) => {
 // === PHIÊN BẢN SẠCH SẼ VÀ AN TOÀN CỦA createProfile ===
 // ==========================================================
 export const createProfile = async (data: any) => {
-  // Bước 1: Loại bỏ 'id' phòng thủ (dù controller đã làm)
-  const { id: _dataId, ...cleanData } = data;
+  // Bước 1: Xử lý Proxy: Chuyển proxyRefId (string) thành proxyId (int)
+  if (data.proxyRefId) {
+    const proxyId = parseInt(String(data.proxyRefId), 10);
+    if (!isNaN(proxyId)) {
+      data.proxyId = proxyId;
+    }
+  }
 
-  // Bước 2: Tạo profile và để cho DATABASE tự quyết định ID
+  // Bước 2: Loại bỏ 'id' và 'proxyRefId' phòng thủ (dù controller đã làm)
+  const { id: _dataId, proxyRefId: _proxyRefId, ...cleanData } = data;
+
+  console.log('[SERVICE] Dữ liệu chuẩn bị lưu (đã có proxyId):', { ...cleanData, proxyId: cleanData.proxyId });
+
+  // Bước 3: Tạo profile và để cho DATABASE tự quyết định ID
   const newProfile = await prisma.profile.create({
     data: cleanData,
   });

@@ -887,7 +887,17 @@ export default function Profiles() {
       loadProfiles()
     } catch (error: any) {
       console.error('Failed to save profile:', error)
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to save profile'
+      let errorMessage = 'Failed to save profile'
+      
+      // Provide more specific error messages
+      if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message
+      } else if (error?.message) {
+        errorMessage = error.message
+      } else if (error?.code === 'ECONNREFUSED' || error?.message?.includes('Network Error')) {
+        errorMessage = 'Cannot connect to backend server. Please ensure backend is running on port 3000.'
+      }
+      
       alert(`Lỗi: ${errorMessage}`)
     }
   }

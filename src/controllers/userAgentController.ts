@@ -107,3 +107,38 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+// GET /api/user-agents/os/:os
+export const getByOS = asyncHandler(async (req: Request, res: Response) => {
+  const os = req.params.os;
+  if (!os) {
+    throw new AppError('OS parameter is required', 400);
+  }
+  
+  const userAgents = await userAgentService.getUserAgentsByOS(os);
+  
+  res.json({
+    success: true,
+    data: userAgents,
+  });
+});
+
+// GET /api/user-agents/value/:value
+export const getByValue = asyncHandler(async (req: Request, res: Response) => {
+  const value = decodeURIComponent(req.params.value);
+  if (!value) {
+    throw new AppError('Value parameter is required', 400);
+  }
+  
+  const userAgents = await userAgentService.getAllUserAgents();
+  const userAgent = userAgents.find(ua => ua.value === value);
+  
+  if (!userAgent) {
+    throw new AppError('User agent not found', 404);
+  }
+  
+  res.json({
+    success: true,
+    data: userAgent,
+  });
+});
+

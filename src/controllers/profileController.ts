@@ -451,8 +451,9 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     console.log(`[CREATE] screenHeight:`, cleanData.screenHeight, typeof cleanData.screenHeight);
     console.log(`[CREATE] languages:`, cleanData.languages, Array.isArray(cleanData.languages));
     
-    // Loại bỏ 'id' và 'geoEnabled' nếu có trong cleanData (phòng thủ)
-    const { id: _id, geoEnabled: _geoEnabled, ...dataToCreate } = cleanData as any;
+    // Loại bỏ 'id', 'geoEnabled', 'geoLatitude', 'geoLongitude' nếu có trong cleanData (phòng thủ)
+    // Chỉ giữ lại geolocationLatitude và geolocationLongitude (tên đúng trong schema)
+    const { id: _id, geoEnabled: _geoEnabled, geoLatitude: _geoLatitude, geoLongitude: _geoLongitude, ...dataToCreate } = cleanData as any;
     console.log(`[CREATE] Dữ liệu sạch để TẠO MỚI (đã loại bỏ id và geoEnabled):`, JSON.stringify(dataToCreate, null, 2));
     
     // ==========================================================
@@ -735,13 +736,11 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     if (cleanData.geolocationEnabled !== undefined) {
       dataToUpdate.geolocationEnabled = cleanData.geolocationEnabled;
     }
-    if (cleanData.geoLatitude !== undefined && cleanData.geoLatitude !== null) {
-      dataToUpdate.geolocationLat = cleanData.geoLatitude;
-      dataToUpdate.geoLatitude = cleanData.geoLatitude;
+    if (cleanData.geolocationLatitude !== undefined && cleanData.geolocationLatitude !== null) {
+      dataToUpdate.geolocationLatitude = cleanData.geolocationLatitude;
     }
-    if (cleanData.geoLongitude !== undefined && cleanData.geoLongitude !== null) {
-      dataToUpdate.geolocationLon = cleanData.geoLongitude;
-      dataToUpdate.geoLongitude = cleanData.geoLongitude;
+    if (cleanData.geolocationLongitude !== undefined && cleanData.geolocationLongitude !== null) {
+      dataToUpdate.geolocationLongitude = cleanData.geolocationLongitude;
     }
     if (cleanData.webrtcMainIP !== undefined) {
       dataToUpdate.webrtcMainIP = cleanData.webrtcMainIP;

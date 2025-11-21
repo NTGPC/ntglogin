@@ -94,3 +94,33 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+// GET /api/webgl-renderers/os/:os
+export const getByOS = asyncHandler(async (req: Request, res: Response) => {
+  const os = req.params.os;
+  if (!os) {
+    throw new AppError('OS parameter is required', 400);
+  }
+  
+  const renderers = await webglRendererService.getWebglRenderersByOS(os);
+  
+  res.json({
+    success: true,
+    data: renderers,
+  });
+});
+
+// GET /api/webgl-renderers/vendor/:vendor
+export const getByVendor = asyncHandler(async (req: Request, res: Response) => {
+  const vendor = decodeURIComponent(req.params.vendor);
+  if (!vendor) {
+    throw new AppError('Vendor parameter is required', 400);
+  }
+  
+  const renderers = await webglRendererService.getWebglRenderersByVendor(vendor);
+  
+  res.json({
+    success: true,
+    data: renderers,
+  });
+});
+

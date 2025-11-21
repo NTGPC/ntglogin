@@ -16,6 +16,7 @@ import gpuRoutes from './gpuRoutes';
 import userAgentLibraryRoutes from './userAgentLibraryRoutes';
 import userAgentRoutes from './userAgentRoutes';
 import webglRendererRoutes from './webglRendererRoutes';
+import fingerprintPresetRoutes from './fingerprintPresetRoutes';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -31,7 +32,7 @@ const requireAuth = enableAuth
   : (_req: any, _res: any, next: any) => next(); // Skip auth (development mode)
 
 router.use('/profiles', requireAuth, profileRoutes);
-router.use('/fingerprint-presets', requireAuth, require('./fingerprintPresetRoutes').default);
+router.use('/fingerprint-presets', requireAuth, fingerprintPresetRoutes);
 router.use('/proxies', requireAuth, proxyRoutes);
 router.use('/sessions', requireAuth, sessionRoutes);
 router.use('/jobs', requireAuth, jobRoutes);

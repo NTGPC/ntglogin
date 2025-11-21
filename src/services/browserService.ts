@@ -187,32 +187,79 @@ export async function launchProfileWithFingerprint(profile: any) {
   // ==========================================================
   // === BƯỚC 4: KHỞI CHẠY LÕI CHROMIUM VỚI CẤU HÌNH ĐẦY ĐỦ ===
   // ==========================================================
+  
+  // Kiểm tra xem có NTG-Core (custom build) không
+  const ntgCorePath = path.join(process.cwd(), 'packages', 'api', 'browser-core', 'ntg-core.exe');
+  const useCustomCore = fs.existsSync(ntgCorePath);
+  
+  if (useCustomCore) {
+    console.log(`[LIFECYCLE] 🚀 Sử dụng NTG-Core (Custom Build) - Fingerprint ở tầng C++`);
+  } else {
+    console.log(`[LIFECYCLE] 📦 Sử dụng Chromium mặc định - Fingerprint qua JavaScript injection`);
+  }
+  
+  // Base arguments
+  const baseArgs = [
+    '--disable-infobars',
+    '--no-sandbox',
+    '--disable-blink-features=AutomationControlled',
+    '--disable-dev-shm-usage',
+    '--disable-setuid-sandbox',
+    '--disable-notifications',
+    '--disable-popup-blocking',
+    '--restore-last-session',
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+    '--disable-webgpu',
+    '--disable-features=WebRtcHideLocalIpsWithMdns',
+    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--autoplay-policy=no-user-gesture-required',
+  ];
+  
+  // Nếu sử dụng NTG-Core, thêm các command line arguments để fake fingerprint ở tầng C++
+  if (useCustomCore) {
+    // Lấy fingerprintSeed từ profile (hoặc dùng profile.id làm seed nếu chưa có)
+    const fingerprintSeed = profile.fingerprintSeed || String(profile.id || seed);
+    
+    baseArgs.push(
+      `--ntg-ua="${userAgent}"`,
+      `--ntg-platform="${platform}"`,
+      `--ntg-concurrency=${hardwareConcurrency}`,
+      `--ntg-memory=${deviceMemory}`,
+      `--ntg-webgl-vendor="${webglVendor}"`,
+      `--ntg-webgl-renderer="${webglRenderer}"`,
+      `--ntg-screen-width=${screenWidth}`,
+      `--ntg-screen-height=${screenHeight}`,
+      `--ntg-languages="${languages.join(',')}"`,
+      `--ntg-timezone="${timezone}"`,
+      `--ntg-seed=${fingerprintSeed}`,
+      `--ntg-canvas-mode=${canvasMode.toLowerCase()}`
+    );
+    
+    console.log(`[LIFECYCLE] ✅ Đã thêm NTG-Core command line arguments`);
+    console.log(`[LIFECYCLE] 📊 Fingerprint Seed: ${fingerprintSeed}`);
+    console.log(`[LIFECYCLE] 📊 Canvas Mode: ${canvasMode}`);
+    console.log(`[LIFECYCLE] 📊 WebGL Vendor: ${webglVendor}`);
+    console.log(`[LIFECYCLE] 📊 WebGL Renderer: ${webglRenderer.substring(0, 50)}...`);
+  }
+  
   const contextOptions: any = {
     headless: false,
-    args: [
-      '--disable-infobars',
-      '--no-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-      '--disable-setuid-sandbox',
-      '--disable-notifications',
-      '--disable-popup-blocking',
-      '--restore-last-session',
-      '--use-fake-device-for-media-stream',
-      '--use-fake-ui-for-media-stream',
-      '--disable-webgpu',
-      '--disable-features=WebRtcHideLocalIpsWithMdns',
-      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--autoplay-policy=no-user-gesture-required',
-    ],
+    args: baseArgs,
     ignoreDefaultArgs: ['--enable-automation'],
     viewport: {
       width: screenWidth,
       height: screenHeight,
     },
   };
+  
+  // Nếu sử dụng NTG-Core, chỉ định executablePath
+  if (useCustomCore) {
+    contextOptions.executablePath = ntgCorePath;
+    console.log(`[LIFECYCLE] ✅ Executable: ${ntgCorePath}`);
+  }
 
   // Thêm proxy nếu có
   if (profile.proxy) {
@@ -287,6 +334,28 @@ export async function launchProfileWithFingerprint(profile: any) {
       }
     }
 
+    // ==========================================================
+    // === FIX MÀN HÌNH TRẮNG: MỞ TRANG MẶC ĐỊNH NẾU KHÔNG CÓ WORKFLOW ===
+    // ==========================================================
+    if (!profile.workflowId) {
+      console.log('[LIFECYCLE] Không có workflow, mở trang kiểm tra mặc định.');
+      try {
+        await page.goto('https://pixelscan.net/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        console.log('[LIFECYCLE] ✅ Đã mở trang mặc định: https://pixelscan.net/');
+      } catch (e) {
+        console.error('[LIFECYCLE] ⚠️ Không thể mở trang mặc định:', e);
+        // Thử mở trang khác nếu pixelscan.net không hoạt động
+        try {
+          await page.goto('https://www.google.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          console.log('[LIFECYCLE] ✅ Đã mở trang dự phòng: https://www.google.com/');
+        } catch (e2) {
+          console.error('[LIFECYCLE] ⚠️ Không thể mở trang dự phòng:', e2);
+        }
+      }
+    } else {
+      console.log(`[LIFECYCLE] Profile có workflow ID: ${profile.workflowId}, không mở trang mặc định.`);
+    }
+
     console.log(`[LIFECYCLE] ✅ Profile "${profile.name}" đã khởi chạy thành công.`);
     return browserContext;
   } catch (error) {
@@ -314,7 +383,8 @@ function processInjectionTemplate(profileData: any): string {
     // --- FIX OS PLATFORM DETECTION ---
     let platform = navigator.platform || profileData?.platform || null;
     if (!platform) {
-      const osName = profileData?.os || profileData?.osName || '';
+      // ĐẢM BẢO osName LUÔN LÀ CHUỖI, KHÔNG ĐƯỢC NULL
+      const osName = String(profileData?.os || profileData?.osName || 'Windows');
       const osLower = osName.toLowerCase();
       const arch = profileData?.arch || profileData?.architecture || 'x64';
       
@@ -336,7 +406,9 @@ function processInjectionTemplate(profileData: any): string {
     if (webgl.renderer && webgl.renderer.includes('ANGLE')) {
       webglVendor = 'Google Inc. (NVIDIA)';
     } else if (!webgl.vendor) {
-      const osLower = (profileData?.os || profileData?.osName || '').toLowerCase();
+      // ĐẢM BẢO osName LUÔN LÀ CHUỖI, KHÔNG ĐƯỢC NULL
+      const osName = String(profileData?.os || profileData?.osName || 'Windows');
+      const osLower = osName.toLowerCase();
       if (osLower.includes('macos') || osLower.includes('mac')) {
         webglVendor = 'Apple Inc.';
         if (!webglRenderer || webglRenderer.includes('ANGLE')) {
@@ -1394,19 +1466,48 @@ export async function launchBrowser(options: BrowserLaunchOptions & { profile?: 
   }
 
   // Launch browser
-  // Choose browser channel based on fingerprint.driver
+  // Priority: Custom executable path > NTG-Core > Channel
+  let executablePath: string | undefined = undefined;
   let channel: 'chrome' | 'msedge' | undefined = undefined;
-  if (fingerprint && typeof fingerprint.driver === 'string') {
-    if (fingerprint.driver === 'chrome') channel = 'chrome';
-    if (fingerprint.driver === 'msedge') channel = 'msedge';
+
+  // Check for custom Chrome executable (NTG-Core or custom build)
+  const possiblePaths = [
+    process.env.CHROME_EXECUTABLE_PATH,
+    process.env.NTG_CORE_PATH,
+    'D:\\Tool\\chrome-win64\\chrome.exe',
+    path.join(process.cwd(), 'packages', 'api', 'browser-core', 'ntg-core.exe'),
+    path.join(process.cwd(), 'ntg-core', 'build', 'src', 'out', 'Release', 'electron.exe'),
+  ];
+
+  for (const possiblePath of possiblePaths) {
+    if (possiblePath && fs.existsSync(possiblePath)) {
+      executablePath = possiblePath;
+      console.log(`[Browser ${sessionId}] ✅ Sử dụng custom Chrome executable: ${executablePath}`);
+      break;
+    }
   }
 
-  const browser = await puppeteer.launch({
-    headless: false, // Show browser window
+  // If no custom executable, use channel
+  if (!executablePath) {
+    if (fingerprint && typeof fingerprint.driver === 'string') {
+      if (fingerprint.driver === 'chrome') channel = 'chrome';
+      if (fingerprint.driver === 'msedge') channel = 'msedge';
+    }
+  }
+
+  const launchOptions: any = {
+    headless: false,
     args: launchArgs,
     defaultViewport: { width: 1280, height: 720 },
-    channel: channel as any, // Puppeteer types may not include msedge, but it works
-  });
+  };
+
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
+  } else if (channel) {
+    launchOptions.channel = channel as any;
+  }
+
+  const browser = await puppeteer.launch(launchOptions);
 
   // Store browser instance
   browserInstances.set(sessionId, browser);

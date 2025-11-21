@@ -156,6 +156,9 @@ model Profile {
   hardwareConcurrency Int      @default(8) // Số lõi CPU (2-32 typical)
   deviceMemory        Int      @default(8) // Dung lượng RAM (GB) (2-64 typical)
   languages           String[] @default(["en-US", "en"]) // Array of language codes
+  
+  // === DETERMINISTIC NOISE SEED (NTG-CORE) ===
+  fingerprintSeed     String?  // Hạt giống để tạo nhiễu xác định cho Canvas/WebGL (tạm optional để populate dữ liệu cũ)
 
   // === HARDWARE - Canvas, WebGL, Audio fingerprinting ===
   canvasMode          String   @default("noise") // "noise" | "off" | "block"
