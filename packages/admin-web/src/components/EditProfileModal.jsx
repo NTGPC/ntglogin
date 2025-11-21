@@ -400,8 +400,8 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     }));
   };
 
-  // --- HÀM RANDOMIZE ALL ---
-  const handleRandomizeAll = () => {
+  // --- HÀM GENERATE FINGERPRINT (Helper) ---
+  const generateFingerprint = () => {
     // Random OS trước (CHỈ Windows hoặc macOS)
     const osOptions = ['Windows', 'Windows 10', 'Windows 11', 'macOS'];
     const randomOS = osOptions[Math.floor(Math.random() * osOptions.length)];
@@ -432,13 +432,11 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
     const offNoiseModes = ['Noise', 'Off']; // Noise đứng đầu
     const webglMetaModes = ['Mask', 'Real']; // Mask đứng đầu
 
-    // Cập nhật TOÀN BỘ state cùng lúc
-    setProfile(prev => ({
-      ...prev,
+    return {
       userAgent: randomAgent.value,
       os: randomOS, // Sử dụng OS đã random (ĐẢM BẢO RÀNG BUỘC)
-      webglRenderer: randomGPU ? randomGPU.renderer : prev.webglRenderer,
-      webglVendor: randomGPU ? randomGPU.vendor : prev.webglVendor,
+      webglRenderer: randomGPU ? randomGPU.renderer : profile.webglRenderer,
+      webglVendor: randomGPU ? randomGPU.vendor : profile.webglVendor,
       screenWidth: randomRes.w,
       screenHeight: randomRes.h,
       screen: `${randomRes.w}x${randomRes.h}`,
@@ -454,6 +452,28 @@ export default function EditProfileModal({ open, initial, onClose, onUpdate }) {
       webglMetaMode: webglMetaModes[Math.floor(Math.random() * webglMetaModes.length)],
       geoEnabled: Math.random() > 0.5,
       webrtcMainIp: Math.random() > 0.5,
+    };
+  };
+
+  // --- HÀM RANDOMIZE ALL ---
+  const handleRandomizeAll = () => {
+    // 1. Tạo bộ dữ liệu ngẫu nhiên (Giữ nguyên hàm cũ của ông)
+    const randomData = generateFingerprint(); 
+
+    // 2. QUAN TRỌNG: Lấy cái tên đang nhập trên màn hình
+    // (Nếu ông dùng Ant Design Form thì dùng dòng 1, nếu React State thường thì dùng dòng 2)
+    const currentName = profile.name || '';
+
+    // 3. Gộp dữ liệu: Random mới + Tên cũ
+    const finalData = {
+      ...randomData,
+      name: currentName, // <--- Dòng này giữ mạng sống cho cái tên
+    };
+
+    // 4. Cập nhật lại giao diện
+    setProfile(prev => ({
+      ...prev,
+      ...finalData,
     }));
   };
 

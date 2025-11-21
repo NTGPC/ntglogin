@@ -804,13 +804,60 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Không có dữ liệu hợp lệ để cập nhật.' });
     }
 
-    // 4. LOẠI BỎ 'id' MỘT LẦN NỮA ĐỂ ĐẢM BẢO AN TOÀN
-    const { id: __id, ...finalDataToUpdate } = dataToUpdate as any;
-    console.log(`[UPDATE] Dữ liệu sạch để CẬP NHẬT profile ${id} (đã loại bỏ id):`, JSON.stringify(finalDataToUpdate, null, 2));
-    
+    // --- COPY ĐÈ VÀO ĐOẠN XỬ LÝ DỮ LIỆU TRƯỚC DÒNG prisma.profile.update ---
+
+    // 1. Tách dữ liệu từ Body
+    const { id: __bodyId, ...bodyData } = req.body;
+
+    // 2. KHAI BÁO CỨNG: CÁI GÌ LƯU VÀO CỘT NÀO (KHÔNG LOOP NỮA CHO CHẮC)
+    // Cách này hơi dài dòng nhưng ĐẢM BẢO 100% không bị mất dữ liệu
+    const finalDataToUpdate: any = {
+        name: bodyData.name,             // <--- Gán cứng NAME vào đây, chạy đằng trời!
+        userAgent: bodyData.userAgent,
+        proxy: bodyData.proxy,
+        notes: bodyData.notes,
+        status: bodyData.status,
+        folderId: bodyData.folderId,
+        driverType: bodyData.driverType,
+        browserType: bodyData.browserType,
+        workflowId: bodyData.workflowId,
+        transferStatus: bodyData.transferStatus,
+        // Nếu database bro có cột nào nữa thì thêm vào đây...
+    };
+
+    // 3. GOM TẤT CẢ NHỮNG THỨ CÒN LẠI VÀO FINGERPRINT (RÁC -> VÀNG)
+    const fingerprintStorage: any = {};
+
+    // Liệt kê những trường ĐÃ lấy ở trên để không lấy lại
+    const takenFields = ['name', 'userAgent', 'proxy', 'notes', 'status', 'folderId', 'driverType', 'browserType', 'workflowId', 'transferStatus', 'id', '_id', 'created_at', 'updated_at', 'userId'];
+
+    Object.keys(bodyData).forEach(key => {
+        // Nếu key chưa được lấy ở bước 2 -> Nhét vào fingerprint
+        if (!takenFields.includes(key)) {
+            fingerprintStorage[key] = (bodyData as any)[key];
+        }
+    });
+
+    // Xử lý logic merge fingerprint cũ (nếu có)
+    if ((bodyData as any).fingerprint) {
+        const fpRaw = (bodyData as any).fingerprint;
+        try {
+            const fpParsed = typeof fpRaw === 'string' ? JSON.parse(fpRaw) : fpRaw;
+            Object.assign(fingerprintStorage, fpParsed);
+        } catch (e) {}
+    }
+
+    // Gán fingerprint vào data cuối cùng
+    finalDataToUpdate.fingerprint = fingerprintStorage;
+
+    // --- LOG RA ĐỂ BRO KIỂM TRA NGAY TẠI CHỖ ---
+    console.log('🔥 TÊN SẮP LƯU:', finalDataToUpdate.name); 
+    console.log('💾 DATA UPDATE:', JSON.stringify(finalDataToUpdate, null, 2));
+
+    // --- SAU ĐÓ LÀ DÒNG 851: await prisma.profile.update... ---
     // 5. THỰC THI LỆNH UPDATE VỚI DỮ LIỆU ĐÃ ĐƯỢC XÂY DỰNG VÀ LÀM SẠCH
     const updatedProfile = await prisma.profile.update({
-      where: { id: parseInt(id, 10) }, // Đảm bảo ID là number
+      where: { id: Number(id) }, // Đảm bảo ID là số
       data: finalDataToUpdate, // Chỉ cập nhật những gì có trong object này (đã loại bỏ id)
       include: {
         workflow: true, // Lấy kèm thông tin workflow sau khi cập nhật
