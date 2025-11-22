@@ -1,0 +1,44 @@
+// ==========================================================
+// PATCH: content/common/user_agent.cc
+// Mục đích: Fake User Agent từ command line thay vì lấy từ OS
+// ==========================================================
+
+#include "base/command_line.h"
+#include "content/public/common/user_agent.h"
+
+// ==========================================================
+// PATCH: BuildUserAgentFromProduct()
+// ==========================================================
+std::string BuildUserAgentFromProduct(const std::string& product) {
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  
+  // Nếu có --ntg-ua, trả về trực tiếp
+  if (command_line->HasSwitch("ntg-ua")) {
+    std::string custom_ua = command_line->GetSwitchValueASCII("ntg-ua");
+    if (!custom_ua.empty()) {
+      return custom_ua;
+    }
+  }
+  
+  // Fallback: Sử dụng logic gốc
+  return BuildUserAgentFromProductInternal(product);
+}
+
+// ==========================================================
+// PATCH: GetUserAgent()
+// ==========================================================
+std::string GetUserAgent() {
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  
+  // Nếu có --ntg-ua, trả về trực tiếp
+  if (command_line->HasSwitch("ntg-ua")) {
+    std::string custom_ua = command_line->GetSwitchValueASCII("ntg-ua");
+    if (!custom_ua.empty()) {
+      return custom_ua;
+    }
+  }
+  
+  // Fallback: Sử dụng logic gốc
+  return GetUserAgentInternal();
+}
+

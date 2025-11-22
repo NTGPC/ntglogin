@@ -1,0 +1,78 @@
+// ==========================================================
+// PATCH: third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.cc
+// Mục đích: Thêm DETERMINISTIC NOISE vào Canvas để đánh bại fingerprinting
+// Chiến lược: Cùng seed -> Cùng noise -> Fingerprint ổn định
+// ==========================================================
+
+#include "base/command_line.h"
+#include "base/hash/hash.h" // Để băm seed thành số
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+
+// ==========================================================
+// PATCH: GetImageData() - CAN THIỆP VÀO DỮ LIỆU PIXEL TRƯỚC KHI TRẢ VỀ
+// ==========================================================
+// Đây là hàm QUAN TRỌNG NHẤT - được gọi khi website lấy dữ liệu pixel
+ImageData* CanvasRenderingContext2D::getImageData(int sx, int sy, int sw, int sh) {
+  // Gọi hàm gốc để lấy dữ liệu pixel
+  ImageData* image_data = getImageDataInternal(sx, sy, sw, sh);
+  
+  if (!image_data) {
+    return image_data;
+  }
+  
+  // --- NTG CUSTOM CORE: CANVAS NOISE INJECTION ---
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  std::string canvas_mode = command_line->GetSwitchValueASCII("ntg-canvas-mode");
+  
+  // Chỉ thêm nhiễu nếu mode là "noise"
+  if (canvas_mode == "noise") {
+    std::string seed_str = command_line->GetSwitchValueASCII("ntg-seed");
+    
+    // Biến seed string thành hash number (deterministic)
+    uint32_t seed_hash = base::PersistentHash(seed_str);
+    
+    // 'data' là mảng chứa các pixel (R, G, B, A, R, G, B, A...)
+    // image_data->data() trả về con trỏ tới mảng này
+    auto* pixels = image_data->data();
+    size_t length = image_data->length();
+    
+    // Áp dụng deterministic noise
+    // Mẹo: Dùng seed để đảm bảo nhiễu LUÔN GIỐNG NHAU với cùng 1 profile
+    // nhưng KHÁC NHAU giữa các profile
+    for (size_t i = 0; i < length; i += 4) {
+      // Chỉ thay đổi pixel nếu thỏa mãn điều kiện để tối ưu hiệu năng
+      // Ví dụ: cứ 500 pixel thì đổi 1 cái (tỷ lệ 0.2%)
+      if ((i + seed_hash) % 500 == 0) {
+        // Thay đổi kênh Blue (pixel[i+2]) một chút xíu
+        // Đảm bảo không vượt quá 255 hoặc nhỏ hơn 0
+        int noise = (seed_hash % 3) - 1; // -1, 0, hoặc 1
+        
+        int val = static_cast<int>(pixels[i + 2]) + noise;
+        if (val > 255) val = 255;
+        if (val < 0) val = 0;
+        
+        pixels[i + 2] = static_cast<uint8_t>(val);
+      }
+    }
+  }
+  // --- END NTG CUSTOM CORE ---
+  
+  return image_data;
+}
+
+// ==========================================================
+// PATCH: toDataURL() - CAN THIỆP VÀO KẾT QUẢ ENCODE
+// ==========================================================
+// Hàm này được gọi khi website lấy base64 của canvas
+String CanvasRenderingContext2D::toDataURL(const String& mime_type, double quality) {
+  // Lấy dữ liệu pixel với noise đã áp dụng
+  ImageData* image_data = getImageData(0, 0, width(), height());
+  
+  if (!image_data) {
+    return toDataURLInternal(mime_type, quality);
+  }
+  
+  // Encode thành base64 (logic gốc)
+  return toDataURLFromImageData(image_data, mime_type, quality);
+}
+

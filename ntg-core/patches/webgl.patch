@@ -1,0 +1,49 @@
+// ==========================================================
+// PATCH: third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+// Mục đích: Fake WebGL Vendor và Renderer từ command line
+// Chiến lược: Đánh chặn 2 câu hỏi cụ thể (VENDOR và RENDERER)
+// ==========================================================
+
+#include "base/command_line.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+
+// ==========================================================
+// PATCH: getParameter() - UNMASKED_VENDOR_WEBGL & UNMASKED_RENDERER_WEBGL
+// ==========================================================
+// Định nghĩa hằng số (hoặc include file header chứa nó)
+// GLenum values từ WebGL spec:
+// UNMASKED_VENDOR_WEBGL = 0x9245
+// UNMASKED_RENDERER_WEBGL = 0x9246
+
+ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+                                                     GLenum pname) {
+  // --- NTG CUSTOM CORE: WEBGL SPOOFING ---
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  
+  // Chặn UNMASKED_VENDOR_WEBGL (0x9245)
+  if (pname == 0x9245) { // UNMASKED_VENDOR_WEBGL
+    if (command_line->HasSwitch("ntg-webgl-vendor")) {
+      std::string fake_vendor = command_line->GetSwitchValueASCII("ntg-webgl-vendor");
+      // Trả về Vendor giả và kết thúc hàm ngay lập tức
+      return WebGLAny(String::FromUTF8(fake_vendor.c_str()));
+    }
+    // Fallback: Trả về vendor mặc định
+    return WebGLAny(String("Intel Inc."));
+  }
+  
+  // Chặn UNMASKED_RENDERER_WEBGL (0x9246)
+  if (pname == 0x9246) { // UNMASKED_RENDERER_WEBGL
+    if (command_line->HasSwitch("ntg-webgl-renderer")) {
+      std::string fake_renderer = command_line->GetSwitchValueASCII("ntg-webgl-renderer");
+      // Trả về Renderer giả và kết thúc hàm ngay lập tức
+      return WebGLAny(String::FromUTF8(fake_renderer.c_str()));
+    }
+    // Fallback: Trả về renderer mặc định
+    return WebGLAny(String("Intel Iris OpenGL Engine"));
+  }
+  // --- END NTG CUSTOM CORE ---
+  
+  // Các tham số khác: xử lý bình thường (không can thiệp)
+  return getParameterInternal(script_state, pname);
+}
+

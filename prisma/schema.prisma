@@ -143,7 +143,7 @@ model Profile {
   userAgentRef         UserAgent? @relation(fields: [userAgentId], references: [id], onDelete: SetNull)
   
   // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
-  userAgent           String?  @unique // User Agent string (deprecated: use fingerprintPresetId)
+  userAgent           String?  // User Agent string (deprecated: use fingerprintPresetId)
   platform            String   @default("Win32") // Giá trị cho navigator.platform (ví dụ: "Win32", "MacIntel")
   
   // === CLIENT HINTS HEADERS (QUAN TRỌNG ĐỂ NHẤT QUÁN) ===
@@ -158,7 +158,7 @@ model Profile {
   languages           String[] @default(["en-US", "en"]) // Array of language codes
   
   // === DETERMINISTIC NOISE SEED (NTG-CORE) ===
-  fingerprintSeed     String?  // Hạt giống để tạo nhiễu xác định cho Canvas/WebGL (tạm optional để populate dữ liệu cũ)
+  fingerprintSeed     String   @default(uuid()) // Hạt giống để tạo nhiễu xác định cho Canvas/WebGL
 
   // === HARDWARE - Canvas, WebGL, Audio fingerprinting ===
   canvasMode          String   @default("noise") // "noise" | "off" | "block"

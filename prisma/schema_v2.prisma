@@ -1,0 +1,209 @@
+// ==========================================================
+// === SCHEMA V2.0: FINGERPRINT PRESET MODEL ===
+// === Đảm bảo tính nhất quán tuyệt đối ===
+// ==========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================================
+// === BẢNG FINGERPRINT PRESET - TRUNG TÂM CỦA HỆ THỐNG ===
+// ==========================================================
+// Mỗi Preset là một "máy tính ảo" hoàn chỉnh, đảm bảo nhất quán 100%
+model FingerprintPreset {
+  id                  Int       @id @default(autoincrement())
+  name                String    @unique // Ví dụ: "Windows 11 - Chrome 140 - NVIDIA RTX 4080"
+  description         String?   // Mô tả chi tiết
+  
+  // === NAVIGATOR & CLIENT HINTS ===
+  userAgent           String    // User Agent string đầy đủ
+  platform            String    // "Win32" | "MacIntel" | "Linux x86_64"
+  uaPlatform          String    // "Windows" | "macOS" | "Linux"
+  uaPlatformVersion   String?   // "10.0.0" | "13.0.0"
+  uaFullVersion       String?   // "140.0.6099.71"
+  uaMobile            Boolean   @default(false)
+  browserVersion      Int?      // 130-140
+  
+  // === HARDWARE & GRAPHICS ===
+  hardwareConcurrency Int       @default(8) // CPU cores
+  deviceMemory        Int       @default(8) // RAM (GB)
+  webglVendor         String    // "NVIDIA Corporation" | "Intel Inc." | "Apple Inc."
+  webglRenderer       String    // "NVIDIA GeForce RTX 4080/PCIe/SSE2" | "Apple M2"
+  
+  // === SCREEN & DISPLAY ===
+  screenWidth         Int       @default(1920)
+  screenHeight        Int       @default(1080)
+  colorDepth          Int       @default(24)
+  pixelRatio          Float     @default(1.0)
+  
+  // === LOCALIZATION ===
+  languages           String[]  @default(["en-US", "en"])
+  timezone            String?   // IANA timezone: "Europe/London" | "America/New_York"
+  
+  // === SPOOFING MODES ===
+  canvasMode          String    @default("noise") // "noise" | "mask" | "off"
+  audioContextMode    String    @default("noise") // "noise" | "off"
+  webglMetadataMode   String    @default("mask")  // "mask" | "real"
+  webrtcMode          String    @default("fake")  // "fake" | "off" | "real"
+  geolocationMode     String    @default("fake")  // "fake" | "off" | "real"
+  
+  // === SPOOFED DATA ===
+  geolocationLatitude  Float?
+  geolocationLongitude Float?
+  
+  // === METADATA ===
+  os                  String    // "Windows" | "macOS" | "Linux"
+  osVersion           String?   // "11" | "14" | "Ubuntu 22.04"
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  // === RELATIONS ===
+  profiles            Profile[]
+  
+  @@index([os])
+  @@index([isActive])
+  @@map("fingerprint_presets")
+}
+
+// ==========================================================
+// === BẢNG PROFILE - ĐƠN GIẢN HÓA ===
+// ==========================================================
+// Profile chỉ cần lưu name và presetId
+model Profile {
+  id                  Int       @id @default(autoincrement())
+  name                String
+  notes               String?
+  
+  // === QUAN HỆ VỚI PRESET ===
+  fingerprintPresetId Int
+  fingerprintPreset   FingerprintPreset @relation(fields: [fingerprintPresetId], references: [id], onDelete: Restrict)
+  
+  // === QUAN HỆ VỚI PROXY ===
+  proxyId             Int?
+  proxy               Proxy?    @relation(fields: [proxyId], references: [id], onDelete: SetNull)
+  
+  // === QUAN HỆ VỚI WORKFLOW ===
+  workflowId          Int?
+  workflow            Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  
+  // === METADATA ===
+  macAddress          String?   @unique // Auto-generated MAC address
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  // === RELATIONS ===
+  sessions            Session[]
+  executions          JobExecution[]
+  assignments         WorkflowAssignment[]
+  
+  @@index([name])
+  @@index([fingerprintPresetId])
+  @@index([workflowId])
+  @@map("profiles")
+}
+
+// ==========================================================
+// === BẢNG PROXY ===
+// ==========================================================
+model Proxy {
+  id                  Int       @id @default(autoincrement())
+  name                String?
+  host                String
+  port                Int
+  type                String    @default("http") // "http" | "socks5" | "https"
+  username            String?
+  password            String?
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  profiles            Profile[]
+  
+  @@index([isActive])
+  @@map("proxies")
+}
+
+// ==========================================================
+// === BẢNG SESSION ===
+// ==========================================================
+model Session {
+  id                  Int       @id @default(autoincrement())
+  profileId           Int
+  profile             Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  proxyId             Int?
+  proxy               Proxy?    @relation(fields: [proxyId], references: [id], onDelete: SetNull)
+  
+  status              String    @default("idle") // "idle" | "running" | "stopped" | "failed"
+  startedAt           DateTime?
+  stoppedAt           DateTime?
+  meta                Json?
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  @@index([profileId])
+  @@index([status])
+  @@map("sessions")
+}
+
+// ==========================================================
+// === CÁC MODEL KHÁC (giữ nguyên) ===
+// ==========================================================
+model Workflow {
+  id                  Int       @id @default(autoincrement())
+  name                String
+  description         String?
+  data                Json?
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  profiles            Profile[]
+  assignments         WorkflowAssignment[]
+  executions          JobExecution[]
+  
+  @@map("workflows")
+}
+
+model WorkflowAssignment {
+  id                  Int       @id @default(autoincrement())
+  workflowId          Int
+  workflow            Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  profileId           Int
+  profile             Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  
+  createdAt           DateTime  @default(now())
+  
+  @@unique([workflowId, profileId])
+  @@map("workflow_assignments")
+}
+
+model JobExecution {
+  id                  Int       @id @default(autoincrement())
+  profileId           Int
+  profile             Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workflowId          Int?
+  workflow            Workflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  
+  status              String    @default("pending")
+  startedAt           DateTime?
+  completedAt         DateTime?
+  result              Json?
+  error               String?
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  @@index([profileId])
+  @@index([status])
+  @@map("job_executions")
+}
+

@@ -1,0 +1,59 @@
+// ==========================================================
+// PATCH: third_party/blink/renderer/core/frame/navigator.cc
+// Mục đích: Fake hardwareConcurrency và deviceMemory từ command line
+// ==========================================================
+
+#include "base/command_line.h"
+#include "base/strings/string_number_conversions.h"
+
+// ==========================================================
+// PATCH 1: hardwareConcurrency()
+// ==========================================================
+unsigned long Navigator::hardwareConcurrency() const {
+  // Đọc từ command line argument --ntg-concurrency
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch("ntg-concurrency")) {
+    std::string value = command_line->GetSwitchValueASCII("ntg-concurrency");
+    int concurrency = 8; // Default
+    if (base::StringToInt(value, &concurrency) && concurrency > 0 && concurrency <= 64) {
+      return static_cast<unsigned long>(concurrency);
+    }
+  }
+  
+  // Fallback: Trả về giá trị mặc định an toàn
+  return 8;
+}
+
+// ==========================================================
+// PATCH 2: deviceMemory()
+// ==========================================================
+unsigned long long Navigator::deviceMemory() const {
+  // Đọc từ command line argument --ntg-memory
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch("ntg-memory")) {
+    std::string value = command_line->GetSwitchValueASCII("ntg-memory");
+    int memory = 8; // Default (GB)
+    if (base::StringToInt(value, &memory) && memory > 0 && memory <= 128) {
+      return static_cast<unsigned long long>(memory);
+    }
+  }
+  
+  // Fallback: Trả về giá trị mặc định an toàn
+  return 8;
+}
+
+// ==========================================================
+// PATCH 3: platform()
+// ==========================================================
+String Navigator::platform() const {
+  // Đọc từ command line argument --ntg-platform
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch("ntg-platform")) {
+    std::string platform_value = command_line->GetSwitchValueASCII("ntg-platform");
+    return String::FromUTF8(platform_value.c_str());
+  }
+  
+  // Fallback: Trả về platform mặc định
+  return String("Win32");
+}
+

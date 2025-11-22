@@ -6,7 +6,10 @@ node_modules
 
 # Build output
 /dist
+/build
 /generated/prisma
+*.js.map
+*.d.ts
 
 # Browser profiles - không nên commit lên git
 browser_profiles/
