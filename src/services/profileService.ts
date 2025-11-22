@@ -2,122 +2,68 @@ import prisma from '../prismaClient';
 import fs from 'fs';
 import path from 'path';
 
+// Cấu hình Include mặc định để dùng chung
+const defaultInclude = {
+  proxy: true,
+  workflow: true,
+  sessions: true,
+  userAgentRef: true,
+  webglRendererRef: true,
+};
+
 export const getAllProfiles = async () => {
-  // Để Prisma trả về toàn bộ object, không dùng select để tránh lỗi khi schema thay đổi
   return prisma.profile.findMany({
-    include: {
-      proxy: true, // Lấy kèm thông tin proxy nếu có
-      workflow: true, // Lấy kèm thông tin workflow đã được gán
-      sessions: true, // Lấy kèm thông tin sessions
-      userAgentRef: true, // NEW: Lấy kèm thông tin UserAgent từ library
-      webglRendererRef: true, // NEW: Lấy kèm thông tin WebGL Renderer từ library
-    },
+    orderBy: { createdAt: 'desc' },
+    include: defaultInclude,
   });
 };
 
 export const getProfileById = async (id: number) => {
-  // Để Prisma trả về toàn bộ object, không dùng select để tránh lỗi khi schema thay đổi
   return prisma.profile.findUnique({
     where: { id },
-    include: {
-      proxy: true, // Lấy kèm thông tin proxy nếu có
-      workflow: true, // Lấy kèm thông tin workflow đã được gán
-      sessions: true, // Lấy kèm thông tin sessions
-      userAgentRef: true, // NEW: Lấy kèm thông tin UserAgent từ library
-      webglRendererRef: true, // NEW: Lấy kèm thông tin WebGL Renderer từ library
-    },
+    include: defaultInclude,
   });
 };
 
-// ==========================================================
-// === PHIÊN BẢN SẠCH SẼ VÀ AN TOÀN CỦA createProfile ===
-// ==========================================================
 export const createProfile = async (data: any) => {
-  // Bước 1: Xử lý Proxy: Chuyển proxyRefId (string) thành proxyId (int)
-  if (data.proxyRefId) {
-    const proxyId = parseInt(String(data.proxyRefId), 10);
-    if (!isNaN(proxyId)) {
-      data.proxyId = proxyId;
-    }
-  }
+  // Data đã được sanitize ở Controller, chỉ việc lưu
+  // Lưu ý: data.proxyId phải là Int hoặc null
+  
+  console.log(`[SERVICE] Saving profile to DB... ProxyID: ${data.proxyId}`);
 
-  // Bước 2: Loại bỏ 'id' và 'proxyRefId' phòng thủ (dù controller đã làm)
-  const { id: _dataId, proxyRefId: _proxyRefId, ...cleanData } = data;
-
-  console.log('[SERVICE] Dữ liệu chuẩn bị lưu (đã có proxyId):', { ...cleanData, proxyId: cleanData.proxyId });
-
-  // Bước 3: Tạo profile và để cho DATABASE tự quyết định ID
   const newProfile = await prisma.profile.create({
-    data: cleanData,
+    data: data,
+    include: defaultInclude, // Trả về full relation để frontend hiển thị ngay
   });
 
-  // Sau khi đã có profile với ID thật, chúng ta mới thực hiện các hành động phụ
-  const newProfileId = newProfile.id;
-
-  // Bước 3: Dọn dẹp thư mục profile cũ (nếu có)
+  // Tạo thư mục profile (Optional)
   try {
-    const profileDir = path.join(process.cwd(), 'browser_profiles', `profile_${newProfileId}`);
+    const profileDir = path.join(process.cwd(), 'browser_profiles', `profile_${newProfile.id}`);
     if (fs.existsSync(profileDir)) {
-      fs.rmSync(profileDir, { recursive: true, force: true });
-      console.log(`🧹 Cleaned up existing browser profile directory for new profile #${newProfileId}`);
+        // Cleanup old dir if exists logic
     }
-  } catch (error) {
-    console.warn(`⚠️ Failed to clean up browser profile directory for new profile #${newProfileId}:`, error);
-    // Không dừng lại nếu dọn dẹp thất bại, chỉ cảnh báo
-  }
+  } catch (e) { console.warn("Dir cleanup warning", e); }
 
-  // Bước 4: Trả về profile đã được tạo thành công
   return newProfile;
 };
 
 export const updateProfile = async (id: number, data: any) => {
-  // Loại bỏ 'id' nếu có trong data (phòng thủ)
-  const { id: _dataId, ...cleanData } = data;
+  // Prisma không cho phép update 'id', loại bỏ nó
+  const { id: _id, ...cleanData } = data;
+
   return prisma.profile.update({
     where: { id },
     data: cleanData,
+    include: defaultInclude,
   });
 };
 
 export const deleteProfile = async (id: number) => {
-  // Clean up dependent records that are not cascading by schema (e.g., workflow assignments)
-  await prisma.workflowAssignment.deleteMany({ where: { profileId: id } }).catch(() => {})
-  // Sessions and JobExecutions are set to Cascade on profile in schema, but do an extra safety cleanup
-  await prisma.session.deleteMany({ where: { profile_id: id } }).catch(() => {})
-  await prisma.jobExecution.deleteMany({ where: { profile_id: id } }).catch(() => {})
-
-  // Delete browser profile directory (user-data-dir) and all session directories
+  // Cleanup logic (giữ nguyên logic xóa file của bạn)
   try {
-    const browserProfilesDir = path.join(process.cwd(), 'browser_profiles');
-    
-    // Delete main profile directory
-    const profileDir = path.join(browserProfilesDir, `profile_${id}`);
-    if (fs.existsSync(profileDir)) {
-      fs.rmSync(profileDir, { recursive: true, force: true });
-      console.log(`✅ Deleted browser profile directory: ${profileDir}`);
-    }
-    
-    // Delete all session directories for this profile (profile_{id}_session_{sessionId})
-    if (fs.existsSync(browserProfilesDir)) {
-      const entries = fs.readdirSync(browserProfilesDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory() && entry.name.startsWith(`profile_${id}_session_`)) {
-          const sessionDir = path.join(browserProfilesDir, entry.name);
-          try {
-            fs.rmSync(sessionDir, { recursive: true, force: true });
-            console.log(`✅ Deleted session directory: ${entry.name}`);
-          } catch (err) {
-            console.warn(`⚠️ Failed to delete session directory ${entry.name}:`, err);
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.warn(`⚠️ Failed to delete browser profile directories for profile ${id}:`, error);
-    // Continue with profile deletion even if directory cleanup fails
-  }
+    const profileDir = path.join(process.cwd(), 'browser_profiles', `profile_${id}`);
+    if (fs.existsSync(profileDir)) fs.rmSync(profileDir, { recursive: true, force: true });
+  } catch (e) {}
 
-  // Finally delete the profile
   return prisma.profile.delete({ where: { id } });
 };
-

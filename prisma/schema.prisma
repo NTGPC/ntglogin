@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql" // Lưu ý: Nếu bạn dùng SQLite thì đổi lại thành "sqlite" và xóa env(), dùng file:./dev.db
   url      = env("DATABASE_URL")
 }
 
@@ -25,26 +25,25 @@ model User {
 // ==========================================================
 // === BẢNG FINGERPRINT PRESET - TRUNG TÂM CỦA HỆ THỐNG ===
 // ==========================================================
-// Mỗi Preset là một "máy tính ảo" hoàn chỉnh, đảm bảo nhất quán 100%
 model FingerprintPreset {
   id                  Int       @id @default(autoincrement())
-  name                String    @unique // Ví dụ: "Windows 11 - Chrome 140 - NVIDIA RTX 4080"
-  description         String?   // Mô tả chi tiết
+  name                String    @unique 
+  description         String?   
   
   // === NAVIGATOR & CLIENT HINTS ===
-  userAgent           String    // User Agent string đầy đủ
-  platform            String    // "Win32" | "MacIntel" | "Linux x86_64"
-  uaPlatform          String    // "Windows" | "macOS" | "Linux"
-  uaPlatformVersion   String?   // "10.0.0" | "13.0.0"
-  uaFullVersion       String?   // "140.0.6099.71"
+  userAgent           String    
+  platform            String    
+  uaPlatform          String    
+  uaPlatformVersion   String?   
+  uaFullVersion       String?   
   uaMobile            Boolean   @default(false)
-  browserVersion      Int?      // 130-140
+  browserVersion      Int?      
   
   // === HARDWARE & GRAPHICS ===
-  hardwareConcurrency Int       @default(8) // CPU cores
-  deviceMemory        Int       @default(8) // RAM (GB)
-  webglVendor         String    // "NVIDIA Corporation" | "Intel Inc." | "Apple Inc."
-  webglRenderer       String    // "NVIDIA GeForce RTX 4080/PCIe/SSE2" | "Apple M2"
+  hardwareConcurrency Int       @default(8) 
+  deviceMemory        Int       @default(8) 
+  webglVendor         String    
+  webglRenderer       String    
   
   // === SCREEN & DISPLAY ===
   screenWidth         Int       @default(1920)
@@ -54,22 +53,22 @@ model FingerprintPreset {
   
   // === LOCALIZATION ===
   languages           String[]  @default(["en-US", "en"])
-  timezone            String?   // IANA timezone: "Europe/London" | "America/New_York"
+  timezone            String?   
   
   // === SPOOFING MODES ===
-  canvasMode          String    @default("noise") // "noise" | "mask" | "off"
-  audioContextMode    String    @default("noise") // "noise" | "off"
-  webglMetadataMode   String    @default("mask")  // "mask" | "real"
-  webrtcMode          String    @default("fake")  // "fake" | "off" | "real"
-  geolocationMode     String    @default("fake")  // "fake" | "off" | "real"
+  canvasMode          String    @default("noise") 
+  audioContextMode    String    @default("noise") 
+  webglMetadataMode   String    @default("mask")  
+  webrtcMode          String    @default("fake")  
+  geolocationMode     String    @default("fake")  
   
   // === SPOOFED DATA ===
   geolocationLatitude  Float?
   geolocationLongitude Float?
   
   // === METADATA ===
-  os                  String    // "Windows" | "macOS" | "Linux"
-  osVersion           String?   // "11" | "14" | "Ubuntu 22.04"
+  os                  String    
+  osVersion           String?   
   isActive            Boolean   @default(true)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -83,22 +82,21 @@ model FingerprintPreset {
 }
 
 // ==========================================================
-// === BẢNG THƯ VIỆN USER AGENTS (DEPRECATED - Giữ để backward compatibility) ===
+// === BẢNG THƯ VIỆN USER AGENTS ===
 // ==========================================================
 model UserAgent {
   id                Int       @id @default(autoincrement())
-  name              String    @unique // Ví dụ: "Windows 11 - Chrome 140"
-  value             String    @unique // Chuỗi user agent đầy đủ
-  os                String    // Ví dụ: "Windows", "macOS"
-  platform          String    // Ví dụ: "Win32", "MacIntel"
-  uaPlatform        String?   // Platform từ user agent
-  uaPlatformVersion String?   // Platform version
-  uaFullVersion     String?   // Full version string
-  browserVersion    Int?      // Browser version number (130-140)
+  name              String    @unique 
+  value             String    @unique 
+  os                String    
+  platform          String    
+  uaPlatform        String?   
+  uaPlatformVersion String?   
+  uaFullVersion     String?   
+  browserVersion    Int?      
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  // Cho phép một UserAgent được sử dụng bởi nhiều Profile
   profiles          Profile[]
 
   @@index([os])
@@ -107,17 +105,16 @@ model UserAgent {
 }
 
 // ==========================================================
-// === BẢNG THƯ VIỆN CARD ĐỒ HỌA (WebGL) (DEPRECATED - Giữ để backward compatibility) ===
+// === BẢNG THƯ VIỆN CARD ĐỒ HỌA (WebGL) ===
 // ==========================================================
 model WebglRenderer {
   id        Int       @id @default(autoincrement())
-  vendor    String    // Ví dụ: "NVIDIA Corporation", "Intel Inc."
-  renderer  String    @unique // Ví dụ: "NVIDIA GeForce RTX 4090/PCIe/SSE2"
-  os        String?   // OS compatibility: "Windows", "macOS", "Linux"
+  vendor    String    
+  renderer  String    @unique 
+  os        String?   
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  // Cho phép một GPU được sử dụng bởi nhiều Profile
   profiles  Profile[]
 
   @@index([os])
@@ -125,7 +122,9 @@ model WebglRenderer {
   @@map("webgl_renderers")
 }
 
-// Profile model - browser profiles
+// ==========================================================
+// === PROFILE MODEL - ĐÃ FIX LỖI UNIQUE ===
+// ==========================================================
 model Profile {
   id          Int      @id @default(autoincrement())
   name        String
@@ -133,85 +132,85 @@ model Profile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // === QUAN HỆ VỚI FINGERPRINT PRESET (NEW - V2.0) ===
+  // === QUAN HỆ VỚI FINGERPRINT PRESET ===
   fingerprintPresetId Int?
   fingerprintPreset   FingerprintPreset? @relation(fields: [fingerprintPresetId], references: [id], onDelete: SetNull)
 
-  // === NAVIGATOR & CLIENT HINTS (CỰC KỲ QUAN TRỌNG) ===
-  // NEW: Sử dụng quan hệ với thư viện
-  userAgentId         Int?     // ID từ bảng UserAgent
+  // === NAVIGATOR & CLIENT HINTS ===
+  userAgentId         Int?     
   userAgentRef         UserAgent? @relation(fields: [userAgentId], references: [id], onDelete: SetNull)
   
-  // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
-  userAgent           String?  // User Agent string (deprecated: use fingerprintPresetId)
-  platform            String   @default("Win32") // Giá trị cho navigator.platform (ví dụ: "Win32", "MacIntel")
+  // BACKWARD COMPATIBILITY
+  userAgent           String?  
+  platform            String   @default("Win32") 
   
-  // === CLIENT HINTS HEADERS (QUAN TRỌNG ĐỂ NHẤT QUÁN) ===
-  uaPlatform          String?  // Giá trị cho Client Hints Header (ví dụ: "Windows", "macOS")
-  uaPlatformVersion   String?  // Ví dụ: "10.0.0", "15.0.0"
-  uaFullVersion       String?  // Ví dụ: "120.0.6099.216"
-  uaMobile            Boolean  @default(false) // Mobile device flag
+  // === CLIENT HINTS HEADERS ===
+  uaPlatform          String?  
+  uaPlatformVersion   String?  
+  uaFullVersion       String?  
+  uaMobile            Boolean  @default(false) 
   
   // === HARDWARE & GRAPHICS ===
-  hardwareConcurrency Int      @default(8) // Số lõi CPU (2-32 typical)
-  deviceMemory        Int      @default(8) // Dung lượng RAM (GB) (2-64 typical)
-  languages           String[] @default(["en-US", "en"]) // Array of language codes
+  hardwareConcurrency Int      @default(8) 
+  deviceMemory        Int      @default(8) 
+  languages           String[] @default(["en-US", "en"]) 
   
-  // === DETERMINISTIC NOISE SEED (NTG-CORE) ===
-  fingerprintSeed     String   @default(uuid()) // Hạt giống để tạo nhiễu xác định cho Canvas/WebGL
+  // === DETERMINISTIC NOISE SEED ===
+  fingerprintSeed     String   @default(uuid()) 
 
-  // === HARDWARE - Canvas, WebGL, Audio fingerprinting ===
-  canvasMode          String   @default("noise") // "noise" | "off" | "block"
-  clientRectsMode     String?  // "noise" | "off" (optional, for backward compatibility)
+  // === HARDWARE - Canvas, WebGL, Audio ===
+  canvasMode          String   @default("noise") 
+  clientRectsMode     String?  
   
-  // NEW: Sử dụng quan hệ với thư viện WebGL
-  webglRendererId     Int?     // ID từ bảng WebglRenderer
+  webglRendererId     Int?     
   webglRendererRef     WebglRenderer? @relation(fields: [webglRendererId], references: [id], onDelete: SetNull)
   
-  // BACKWARD COMPATIBILITY: Giữ các trường cũ để tương thích
-  webglRenderer       String?  // WebGL renderer string (deprecated: use webglRendererId)
-  webglVendor         String?  // WebGL vendor string (deprecated: use webglRendererRef.vendor)
-  webglImageMode      String?  // "noise" | "off" (optional, for backward compatibility)
-  webglMetadataMode   String?  @default("mask") // "mask" | "real" - Chế độ giả mạo WebGL metadata
-  webglMetaMode       String?  // Deprecated: use webglMetadataMode instead
-  audioContextMode    String   @default("noise") // "noise" | "off" - Chế độ giả mạo AudioContext
+  webglRenderer       String?  
+  webglVendor         String?  
+  webglImageMode      String?  
+  webglMetadataMode   String?  @default("mask") 
+  webglMetaMode       String?  
+  audioContextMode    String   @default("noise") 
 
   // === NETWORK - WebRTC, Geolocation ===
-  webrtcMode          String   @default("fake") // "fake" | "off" | "real"
-  webrtcMainIP        Boolean? @default(false) // Deprecated: use webrtcMode instead
-  geolocationMode     String   @default("fake") // "fake" | "off" | "real"
-  geolocationEnabled  Boolean? // Deprecated: use geolocationMode instead
-  geolocationLatitude  Float?  // Latitude (-90 to 90) - Dữ liệu giả mạo nếu geolocationMode = 'fake'
-  geolocationLongitude Float?  // Longitude (-180 to 180) - Dữ liệu giả mạo nếu geolocationMode = 'fake'
-  geolocationLat      Float?  // Deprecated: use geolocationLatitude instead
-  geolocationLon      Float?  // Deprecated: use geolocationLongitude instead
+  webrtcMode          String   @default("fake") 
+  webrtcMainIP        Boolean? @default(false) 
+  geolocationMode     String   @default("fake") 
+  geolocationEnabled  Boolean? 
+  geolocationLatitude  Float?  
+  geolocationLongitude Float?  
+  geolocationLat      Float?  
+  geolocationLon      Float?  
 
   // === LOCALIZATION & OTHER ===
-  timezone            String?  // Timezone ID (e.g., "Asia/Bangkok", "America/Los_Angeles")
-  timezoneId          String?  // Deprecated: use timezone instead
-  language            String?  // Primary language (e.g., "en-US", "vi-VN")
-  macAddress          String?  @unique // MAC address (unique)
+  timezone            String?  
+  timezoneId          String?  
+  language            String?  
+  
+  // --- ĐÃ FIX: BỎ @UNIQUE Ở ĐÂY ---
+  macAddress          String?   // Đã xóa @unique để tránh lỗi trùng lặp khi random
+  // --------------------------------
 
   // === SCREEN & DISPLAY ===
-  screenWidth         Int?     @default(1920) // Screen width in pixels
-  screenHeight        Int?     @default(1080) // Screen height in pixels
-  colorDepth          Int?     @default(24) // Color depth (bits per pixel)
-  pixelRatio          Float?   @default(1.0) // Device pixel ratio
+  screenWidth         Int?     @default(1920) 
+  screenHeight        Int?     @default(1080) 
+  colorDepth          Int?     @default(24) 
+  pixelRatio          Float?   @default(1.0) 
   
   // === OS INFORMATION ===
-  osName              String?  // OS name (e.g., "Windows 10", "macOS", "Linux")
-  os                  String?  // Deprecated: use osName instead
-  osArch              String?  // OS architecture: "x86" | "x64" | "arm"
-  browserVersion      Int?     // Browser version number
+  osName              String?  
+  os                  String?  
+  osArch              String?  
+  browserVersion      Int?     
 
-  // === BACKWARD COMPATIBILITY - Các trường cũ để tương thích ===
-  user_agent         String?  // Deprecated: use userAgent instead
-  fingerprint        Json?     // Legacy fingerprint JSON
+  // === BACKWARD COMPATIBILITY ===
+  user_agent         String?  
+  fingerprint        Json?     
   fingerprintId      Int?
   fingerprintRef     Fingerprint? @relation(fields: [fingerprintId], references: [id])
-  fingerprintJson    Json?     // Legacy fingerprint JSON string
-  proxyRefId         String?   // Deprecated: use proxyId instead
-  proxyManual        Json?     // Deprecated: use proxy relation instead
+  fingerprintJson    Json?     
+  proxyRefId         String?   
+  proxyManual        Json?     
 
   // === RELATIONS ===
   proxyId    Int?
@@ -253,24 +252,24 @@ model Proxy {
   port       Int
   username   String?
   password   String?
-  type       String   @default("http") // "http" | "socks5" | "socks4"
+  type       String   @default("http") 
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  profiles Profile[] // Một proxy có thể được gán cho nhiều profile
+  profiles Profile[] 
   sessions Session[]
 
   @@index([active])
   @@map("proxies")
 }
 
-// Session model - links profiles with proxies
+// Session model
 model Session {
   id         Int       @id @default(autoincrement())
   profile_id Int
   proxy_id   Int?
-  status     String    @default("idle") // "idle", "running", "stopped"
+  status     String    @default("idle") 
   started_at DateTime?
   stopped_at DateTime?
   meta       Json?
@@ -284,12 +283,12 @@ model Session {
   @@map("sessions")
 }
 
-// Job model - background tasks queue
+// Job model
 model Job {
   id           Int       @id @default(autoincrement())
   type         String
   payload      Json
-  status       String    @default("queued") // "queued", "processing", "done", "failed"
+  status       String    @default("queued") 
   attempts     Int       @default(0)
   scheduled_at DateTime?
   created_at   DateTime  @default(now())
@@ -301,7 +300,7 @@ model Job {
   @@map("jobs")
 }
 
-// JobExecution model - individual job execution per profile
+// JobExecution model
 model JobExecution {
   id           Int       @id @default(autoincrement())
   job_id       Int
@@ -329,10 +328,10 @@ model JobExecution {
   @@map("job_executions")
 }
 
-// Log model - application logs
+// Log model
 model Log {
   id         Int      @id @default(autoincrement())
-  level      String // "info", "warn", "error"
+  level      String 
   message    String
   meta       Json?
   created_at DateTime @default(now())
@@ -342,17 +341,17 @@ model Log {
   @@map("logs")
 }
 
-// Workflow model - drag-drop automation workflows
+// Workflow model
 model Workflow {
   id            Int                  @id @default(autoincrement())
   name          String
   data          Json?
   source        String               @default("local")
-  n8nWorkflowId String?              // Deprecated: kept for backward compatibility
+  n8nWorkflowId String?              
   description   String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
-  profiles      Profile[]            // Một workflow có thể được gán cho nhiều profile
+  profiles      Profile[]            
   assignments   WorkflowAssignment[]
   executions    JobExecution[]
 
@@ -371,16 +370,16 @@ model WorkflowAssignment {
   @@unique([profileId, workflowId])
 }
 
-// Changelog model - lưu trữ lịch sử thay đổi của project
+// Changelog model
 model Changelog {
   id          Int      @id @default(autoincrement())
-  version     String // Version number (e.g., "1.0.0", "Unreleased")
-  title       String // Title of the change
-  type        String // "Added" | "Changed" | "Fixed" | "Removed" | "Security"
-  category    String? // Category (e.g., "Fingerprint", "Profile", "Proxy")
-  description String? // Detailed description
-  files       Json? // List of files changed
-  author      String? // Author of the change
+  version     String 
+  title       String 
+  type        String 
+  category    String? 
+  description String? 
+  files       Json? 
+  author      String? 
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
