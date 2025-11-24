@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, apiClient, Profile, Proxy } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import ImportAccountModal from '@/components/ImportAccountModal'
 import {
   Dialog,
   DialogContent,
@@ -109,6 +110,7 @@ export default function Profiles() {
   const [runWorkflowId, setRunWorkflowId] = useState<number | null>(null)
   const [runWorkflowVars, setRunWorkflowVars] = useState<{ email?: string; password?: string }>({})
   const [runWorkflowProfileIds, setRunWorkflowProfileIds] = useState<number[]>([])
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const presets = [
     {
       label: 'Windows/Chrome US',
@@ -986,10 +988,18 @@ export default function Profiles() {
           <h1 className="text-3xl font-bold">Profiles</h1>
           <p className="text-muted-foreground">Manage browser profiles</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Profile
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsImportModalOpen(true)} variant="outline" className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300">
+            <svg xmlns="http://www.w3.org/2000/svg" className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Import Accounts
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Profile
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
@@ -1172,7 +1182,7 @@ export default function Profiles() {
                     </TableCell>
                   )}
                   <TableCell>
-                    {new Date(profile.created_at).toLocaleDateString()}
+                    {profile.created_at ? new Date(profile.created_at).toLocaleString() : '-'}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -1978,6 +1988,13 @@ export default function Profiles() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Import Account Modal */}
+      <ImportAccountModal 
+        isOpen={isImportModalOpen} 
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={loadProfiles}
+      />
 
     </div>
   )

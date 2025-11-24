@@ -3,6 +3,9 @@ import * as profileController from '../controllers/profileController';
 
 const router = Router();
 
+// Route import phải đặt TRƯỚC route /:id để tránh conflict
+router.post('/import', profileController.importProfiles);
+
 router.get('/', profileController.getAll);
 router.get('/:id', profileController.getById);
 router.get('/:id/fingerprint', profileController.getFingerprint);

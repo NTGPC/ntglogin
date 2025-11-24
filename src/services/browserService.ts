@@ -1173,11 +1173,16 @@ export async function launchBrowser(options: BrowserLaunchOptions & { profile?: 
     headless: false,
     args: [
       // Các tham số để ẩn dấu hiệu tự động hóa và chống phát hiện bot
-      '--disable-blink-features=AutomationControlled',
-      '--disable-infobars', // Tắt thanh thông báo "Chrome is being controlled..."
-      '--disable-dev-shm-usage',
-      '--no-sandbox', // Thường cần thiết trong một số môi trường
+      '--no-sandbox',
       '--disable-setuid-sandbox',
+      '--disable-infobars', // Tắt thanh thông báo "Chrome is being controlled..."
+      '--window-position=0,0',
+      '--ignore-certificate-errors',
+      '--ignore-certificate-errors-spki-list',
+      '--disable-blink-features=AutomationControlled', // QUAN TRỌNG NHẤT: Giấu việc đang dùng Tool
+      '--disable-features=IsolateOrigins,site-per-process', // Tránh lỗi crash khi chuyển trang (Login FB hay bị redirect)
+      '--disable-site-isolation-trials',
+      '--disable-dev-shm-usage',
       '--disable-notifications',
       '--disable-popup-blocking',
       '--restore-last-session', // Khôi phục session trước đó để trông tự nhiên hơn
@@ -1191,7 +1196,7 @@ export async function launchBrowser(options: BrowserLaunchOptions & { profile?: 
       '--autoplay-policy=no-user-gesture-required',
     ],
     // Bỏ qua các default args tự động hóa
-    ignoreDefaultArgs: ['--enable-automation'],
+    ignoreDefaultArgs: ['--enable-automation'], // Tắt dòng "Chrome is being controlled by automated software"
   };
 
   // Thêm proxy nếu có
@@ -1411,9 +1416,14 @@ export async function launchBrowser(options: BrowserLaunchOptions & { profile?: 
   const launchArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
-    '--disable-blink-features=AutomationControlled',
-    '--disable-dev-shm-usage',
     '--disable-infobars', // Hide "Chrome is being controlled" message
+    '--window-position=0,0',
+    '--ignore-certificate-errors',
+    '--ignore-certificate-errors-spki-list',
+    '--disable-blink-features=AutomationControlled', // QUAN TRỌNG NHẤT: Giấu việc đang dùng Tool
+    '--disable-features=IsolateOrigins,site-per-process', // Tránh lỗi crash khi chuyển trang (Login FB hay bị redirect)
+    '--disable-site-isolation-trials',
+    '--disable-dev-shm-usage',
     '--disable-notifications',
     '--disable-popup-blocking',
     `--user-data-dir=${profileDir}`,
@@ -1499,6 +1509,8 @@ export async function launchBrowser(options: BrowserLaunchOptions & { profile?: 
     headless: false,
     args: launchArgs,
     defaultViewport: { width: 1280, height: 720 },
+    // THÊM DÒNG NÀY: Tắt dòng "Chrome is being controlled by automated software"
+    ignoreDefaultArgs: ['--enable-automation'],
   };
 
   if (executablePath) {
@@ -1730,9 +1742,58 @@ export async function getOpenPageUrls(sessionId: number): Promise<string[]> {
 }
 
 // =======================================================================
+// === HÀM HỖ TRỢ: REPLACE BIẾN TỪ ACCOUNT INFO ===
+// =======================================================================
+function replaceVariables(text: string, profile: any): string {
+  if (!text) return "";
+
+  // 1. Lấy thông tin account từ Profile
+  let account: any = {};
+  try {
+    if (profile.accountInfo) {
+      account = typeof profile.accountInfo === 'string' 
+        ? JSON.parse(profile.accountInfo) 
+        : profile.accountInfo;
+    }
+  } catch (e) {
+    console.error("[REPLACE VARS] Error parsing accountInfo", e);
+  }
+
+  // 2. Thay thế các biến
+  let result = text;
+
+  // Thay thế {{uid}} hoặc {{username}}
+  const uidValue = account.uid || account.username || "";
+  result = result.replace(/\{\{uid\}\}/g, uidValue);
+  result = result.replace(/\{\{username\}\}/g, uidValue);
+
+  // Thay thế {{password}}
+  const passValue = account.password || "";
+  result = result.replace(/\{\{password\}\}/g, passValue);
+
+  // Thay thế {{2fa}}
+  const twoFaValue = account.twoFactor || "";
+  result = result.replace(/\{\{2fa\}\}/g, twoFaValue);
+
+  // Thay thế {{email}}
+  const emailValue = account.email || "";
+  result = result.replace(/\{\{email\}\}/g, emailValue);
+
+  // Thay thế {{emailPassword}}
+  const emailPassValue = account.emailPassword || "";
+  result = result.replace(/\{\{emailPassword\}\}/g, emailPassValue);
+
+  // Thay thế {{recoveryEmail}}
+  const recoveryEmailValue = account.recoveryEmail || "";
+  result = result.replace(/\{\{recoveryEmail\}\}/g, recoveryEmailValue);
+
+  return result;
+}
+
+// =======================================================================
 // === PHIÊN BẢN HOÀN CHỈNH - HÀM executeWorkflow VỚI KHẢ NĂNG TỰ CHẨN ĐOÁN ===
 // =======================================================================
-async function executeWorkflowOnPuppeteerPage(page: any, workflow: any): Promise<void> {
+async function executeWorkflowOnPuppeteerPage(page: any, workflow: any, profile?: any): Promise<void> {
   console.log('[🧠 WORKFLOW ENGINE] BỘ NÃO ĐÃ ĐƯỢC KÍCH HOẠT.');
 
   // --- BƯỚC 1: KIỂM TRA ĐẦU VÀO ---
@@ -1842,8 +1903,28 @@ async function executeWorkflowOnPuppeteerPage(page: any, workflow: any): Promise
           const clickSelector = currentNode.data?.config?.selector || currentNode.data?.selector || currentNode.data?.target || currentNode.data?.value;
           if (clickSelector) {
             console.log(`[🔧] Đang click vào selector: ${clickSelector}`);
-            await page.click(clickSelector, { timeout: 10000 });
-            console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã click vào: ${clickSelector}`);
+            try {
+              // Đợi selector xuất hiện trước khi click
+              await page.waitForSelector(clickSelector, { timeout: 5000 });
+              
+              // Kỹ thuật: Promise.all để vừa bấm vừa đợi điều hướng
+              // Nếu bấm Login mà nó chuyển trang -> Code này sẽ đợi load xong mới thả ra
+              await Promise.all([
+                // Chờ tối đa 3s xem có chuyển trang không, nếu không chuyển (ví dụ sai pass) thì vẫn chạy tiếp chứ không crash
+                new Promise(resolve => setTimeout(resolve, 3000)),
+                // Đợi navigation nếu có (nhưng không bắt buộc - nếu không có navigation thì vẫn tiếp tục)
+                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {
+                  console.log(`[🔧] Không có navigation sau khi click, tiếp tục...`);
+                }),
+                // Thực hiện click
+                page.click(clickSelector)
+              ]);
+              
+              console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã click vào: ${clickSelector}`);
+            } catch (err: any) {
+              console.error(`[❌] Click error: ${err.message}`);
+              // Vẫn tiếp tục workflow nếu click lỗi (có thể do selector không tồn tại)
+            }
           } else {
             console.warn(`[⚠️] CẢNH BÁO: Node "Click" không có selector trong config. Bỏ qua.`);
           }
@@ -1852,13 +1933,21 @@ async function executeWorkflowOnPuppeteerPage(page: any, workflow: any): Promise
         case 'type':
         case 'typenode':
         case 'fill':
+        case 'typetext':
           // Sửa lại đường dẫn để đọc trong 'config'
           const typeSelector = currentNode.data?.config?.selector || currentNode.data?.selector || currentNode.data?.target || '';
-          const typeText = currentNode.data?.config?.text || currentNode.data?.text || currentNode.data?.value || '';
+          let typeText = currentNode.data?.config?.text || currentNode.data?.text || currentNode.data?.value || '';
+          
+          // QUAN TRỌNG: Gọi hàm replace biến trước khi nhập
+          if (profile && typeText) {
+            typeText = replaceVariables(typeText, profile);
+            console.log(`[🔧] Đã thay thế biến. Text sau khi replace: "${typeText.substring(0, 50)}${typeText.length > 50 ? '...' : ''}"`);
+          }
+          
           if (typeSelector && typeText) {
-            console.log(`[🔧] Đang nhập "${typeText}" vào selector: ${typeSelector}`);
-            await page.type(typeSelector, typeText);
-            console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã nhập "${typeText}" vào: ${typeSelector}`);
+            console.log(`[🔧] Đang nhập "${typeText.substring(0, 50)}${typeText.length > 50 ? '...' : ''}" vào selector: ${typeSelector}`);
+            await page.type(typeSelector, typeText, { delay: 100 }); // Delay gõ phím cho giống người
+            console.log(`[✅] HÀNH ĐỘNG THÀNH CÔNG: Đã nhập "${typeText.substring(0, 50)}${typeText.length > 50 ? '...' : ''}" vào: ${typeSelector}`);
           } else {
             console.warn(`[⚠️] CẢNH BÁO: Node "Type" không đủ thông tin (selector: ${typeSelector}, text: ${typeText}). Bỏ qua.`);
           }
@@ -1955,9 +2044,9 @@ export async function runAndManageBrowser(
         if (workflow && workflow.data) {
           console.log(`[WORKFLOW] Bắt đầu thực thi workflow "${workflow.name}"...`);
           // =======================================================================
-          // === SỬA LẠI DUY NHẤT DÒNG NÀY - BỎ `await` ĐỂ WORKFLOW CHẠY NON-BLOCKING ===
+          // === TRUYỀN PROFILE VÀO ĐỂ CÓ THỂ REPLACE BIẾN TRONG WORKFLOW ===
           // =======================================================================
-          executeWorkflowOnPuppeteerPage(page, workflow).catch((error: any) => {
+          executeWorkflowOnPuppeteerPage(page, workflow, profile).catch((error: any) => {
             console.error('[WORKFLOW] Lỗi khi thực thi workflow (non-blocking):', error);
             // Không reject Promise chính, chỉ log lỗi để browser vẫn tiếp tục chạy
           });

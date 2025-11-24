@@ -14,6 +14,7 @@ export class WorkflowEngine {
   screenshots: string[];
   private userDataDir: string;
   private driverChannel: 'chrome' | 'chromium' | 'msedge';
+  private profile: any = null; // Lưu profile để dùng cho replace variables
 
   constructor(profileId: number, vars: Record<string, any> = {}) {
     this.profileId = profileId;
@@ -31,20 +32,67 @@ export class WorkflowEngine {
     this.driverChannel = 'chrome';
   }
 
+  // Hàm hỗ trợ replace biến từ accountInfo
+  private replaceVariables(text: string): string {
+    if (!text || !this.profile) return text || "";
+
+    // 1. Lấy thông tin account từ Profile
+    let account: any = {};
+    try {
+      if (this.profile.accountInfo) {
+        account = typeof this.profile.accountInfo === 'string' 
+          ? JSON.parse(this.profile.accountInfo) 
+          : this.profile.accountInfo;
+      }
+    } catch (e) {
+      console.error("[REPLACE VARS] Error parsing accountInfo", e);
+    }
+
+    // 2. Thay thế các biến
+    let result = text;
+
+    // Thay thế {{uid}} hoặc {{username}}
+    const uidValue = account.uid || account.username || "";
+    result = result.replace(/\{\{uid\}\}/g, uidValue);
+    result = result.replace(/\{\{username\}\}/g, uidValue);
+
+    // Thay thế {{password}}
+    const passValue = account.password || "";
+    result = result.replace(/\{\{password\}\}/g, passValue);
+
+    // Thay thế {{2fa}}
+    const twoFaValue = account.twoFactor || "";
+    result = result.replace(/\{\{2fa\}\}/g, twoFaValue);
+
+    // Thay thế {{email}}
+    const emailValue = account.email || "";
+    result = result.replace(/\{\{email\}\}/g, emailValue);
+
+    // Thay thế {{emailPassword}}
+    const emailPassValue = account.emailPassword || "";
+    result = result.replace(/\{\{emailPassword\}\}/g, emailPassValue);
+
+    // Thay thế {{recoveryEmail}}
+    const recoveryEmailValue = account.recoveryEmail || "";
+    result = result.replace(/\{\{recoveryEmail\}\}/g, recoveryEmailValue);
+
+    return result;
+  }
+
   async init() {
     console.log(`🔄 [WorkflowEngine] Initializing for profile ${this.profileId}, userDataDir: ${this.userDataDir}`);
     
     // Fetch profile to get fingerprint/driver info
     try {
       const profileResponse = await axios.get(`${BACKEND_URL}/api/profiles/${this.profileId}`);
-      const profile = profileResponse.data.data || profileResponse.data;
+      this.profile = profileResponse.data.data || profileResponse.data;
       
       console.log(`✅ [WorkflowEngine] Fetched profile ${this.profileId}`);
       
-      if (profile?.fingerprint) {
-        const fp = typeof profile.fingerprint === 'string' 
-          ? JSON.parse(profile.fingerprint) 
-          : profile.fingerprint;
+      if (this.profile?.fingerprint) {
+        const fp = typeof this.profile.fingerprint === 'string' 
+          ? JSON.parse(this.profile.fingerprint) 
+          : this.profile.fingerprint;
         
         if (fp.driver === 'msedge') {
           this.driverChannel = 'msedge';
@@ -150,8 +198,12 @@ export class WorkflowEngine {
         if (!node.data?.selector) {
           throw new Error(`typeText node missing selector`);
         }
-        const text = node.data.var ? String(this.vars[node.data.var] ?? '') : String(node.data.text ?? '');
-        console.log(`⌨️ [WorkflowEngine] Typing text into ${node.data.selector}: ${text.substring(0, 20)}${text.length > 20 ? '...' : ''}`);
+        let text = node.data.var ? String(this.vars[node.data.var] ?? '') : String(node.data.text ?? '');
+        
+        // QUAN TRỌNG: Gọi hàm replace biến trước khi nhập
+        text = this.replaceVariables(text);
+        
+        console.log(`⌨️ [WorkflowEngine] Typing text into ${node.data.selector}: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
         await this.page.fill(node.data.selector, text, { timeout: node.data?.timeoutMs ?? 15000 });
         console.log(`✅ [WorkflowEngine] Text typed successfully`);
         break;

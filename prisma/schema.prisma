@@ -212,6 +212,9 @@ model Profile {
   proxyRefId         String?   
   proxyManual        Json?     
 
+  // === ACCOUNT INFO (Lưu thông tin đăng nhập: username, password, 2FA) ===
+  accountInfo        String?   // Lưu JSON: { username, password, twoFactor }
+
   // === RELATIONS ===
   proxyId    Int?
   proxy      Proxy?   @relation(fields: [proxyId], references: [id], onDelete: SetNull)

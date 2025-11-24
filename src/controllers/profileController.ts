@@ -26,6 +26,51 @@ const parseBoolean = (val: any, fallback: boolean = false): boolean => {
   return String(val) === 'true' || val === true;
 };
 
+/**
+ * Hàm tạo vân tay ngẫu nhiên (Random Fingerprint)
+ */
+const generateRandomFingerprint = () => {
+  const osList = ['windows', 'mac', 'linux'];
+  const screens = [
+    { width: 1920, height: 1080 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 1536, height: 864 },
+    { width: 2560, height: 1440 }
+  ];
+  const cpus = [4, 6, 8, 12, 16];
+  const rams = [4, 8, 16, 32];
+  
+  // List UserAgent mới nhất (Chrome 120+)
+  const userAgents = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  ];
+  
+  const selectedOS = osList[Math.floor(Math.random() * osList.length)];
+  const selectedScreen = screens[Math.floor(Math.random() * screens.length)];
+  const selectedCPU = cpus[Math.floor(Math.random() * cpus.length)];
+  const selectedRAM = rams[Math.floor(Math.random() * rams.length)];
+  const selectedUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+  
+  return {
+    browser: 'chrome',
+    os: selectedOS,
+    screen: selectedScreen,
+    cores: selectedCPU,
+    memory: selectedRAM,
+    userAgent: selectedUA,
+    hardwareConcurrency: selectedCPU,
+    deviceMemory: selectedRAM,
+    screenWidth: selectedScreen.width,
+    screenHeight: selectedScreen.height,
+    webglVendor: "Google Inc. (NVIDIA)",
+    webglRenderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11, vs_5_0, ps_5_0)"
+  };
+};
+
 // ============================================================================
 // === CONTROLLER HANDLERS ===
 // ============================================================================
@@ -151,50 +196,96 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
  * UPDATE PROFILE
  */
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const id = parseNumber(req.params.id);
-  if (!id) throw new AppError('Invalid ID', 400);
+  const { id } = req.params;
+  const data = req.body;
+  
+  try {
+    // 1. Tách các trường đặc biệt cần xử lý thủ công
+    const { fingerprintPresetId, proxyId, workflowId, ...updateData } = data;
 
-  const body = req.body;
-  console.log(`[UPDATE] Profile ID: ${id}. Body keys:`, Object.keys(body));
+    // 2. Chuẩn bị object dữ liệu để update
+    const finalData: any = { ...updateData };
 
-  // 1. Xử lý Proxy ID (nếu có gửi lên)
-  let proxyIdToUpdate: number | null | undefined = undefined;
-  if (body.proxyId !== undefined) {
-    proxyIdToUpdate = parseNumber(body.proxyId); // Có thể là null (nếu muốn gỡ proxy)
+    // 3. Xử lý Proxy ID (Ép kiểu sang Int hoặc null)
+    if (proxyId !== undefined) {
+      // Nếu gửi lên là "None" hoặc chuỗi rỗng hoặc null thì set null
+      if (proxyId === "None" || proxyId === "" || proxyId === null) {
+        finalData.proxyId = null;
+      } else {
+        finalData.proxyId = parseInt(String(proxyId));
+      }
+    }
+
+    // 4. Xử lý Workflow ID (FIX LỖI TRONG ẢNH)
+    if (workflowId !== undefined) {
+      if (workflowId === "None" || workflowId === "" || workflowId === null) {
+        finalData.workflowId = null; // Hủy chọn workflow
+      } else {
+        finalData.workflowId = parseInt(String(workflowId)); // Ép kiểu sang Int
+      }
+    }
+
+    // 5. Xử lý Browser Type (đảm bảo lưu đúng loại Chrome/Chromium)
+    if (updateData.fingerprint && typeof updateData.fingerprint === 'object') {
+       if (updateData.fingerprint.browser) {
+           finalData.browserType = updateData.fingerprint.browser;
+       }
+    }
+
+    // FIX LỖI 500: Xử lý Fingerprint
+    // Frontend gửi lên là Object -> Phải giữ nguyên dạng Json (không cần stringify vì Prisma tự xử lý)
+    if (data.fingerprint && typeof data.fingerprint === 'object') {
+        finalData.fingerprint = data.fingerprint;
+        finalData.fingerprintJson = data.fingerprint; // Đồng bộ cả 2 trường
+        
+        // Nếu trong fingerprint có userAgent, cập nhật luôn cột userAgent ở ngoài
+        if (data.fingerprint.userAgent) {
+            finalData.userAgent = data.fingerprint.userAgent;
+        }
+    } else if (data.fingerprint && typeof data.fingerprint === 'string') {
+        // Nếu là string thì parse về object
+        try {
+            const parsed = JSON.parse(data.fingerprint);
+            finalData.fingerprint = parsed;
+            finalData.fingerprintJson = parsed;
+        } catch (e) {
+            console.warn("Invalid fingerprint JSON string, skipping...");
+        }
+    }
+
+    // Xóa các trường không có trong DB để tránh lỗi
+    delete finalData.id;
+    delete finalData.status;
+    delete finalData.folderId;
+    delete finalData.driverType;
+    delete finalData.transferStatus;
+
+    // 6. Thực hiện Update
+    const profile = await prisma.profile.update({
+      where: { id: parseInt(String(id)) },
+      data: finalData,
+      // Include cả proxy và workflow để frontend hiển thị lại ngay lập tức
+      include: { 
+        proxy: true,
+        // Nếu bạn có relationship workflow, hãy uncomment dòng dưới:
+        // workflow: true 
+      } 
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: profile,
+    });
+  } catch (error) {
+    console.error("Update error:", error);
+    // Trả về lỗi chi tiết để dễ debug hơn
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to update profile', 
+      details: (error as any).message 
+    });
   }
-
-  // 2. Xây dựng object update
-  const updateData: any = {
-    ...body,
-  };
-
-  // Chỉ set proxyId nếu nó được gửi lên
-  if (proxyIdToUpdate !== undefined) {
-    updateData.proxyId = proxyIdToUpdate;
-  }
-
-  // Xóa các trường không có trong DB để tránh lỗi
-  delete updateData.id;
-  delete updateData.status; // Xóa status nếu frontend lỡ gửi lên
-  delete updateData.folderId;
-  delete updateData.driverType;
-  delete updateData.browserType;
-  delete updateData.transferStatus;
-
-  // Cập nhật fingerprint JSON nếu có thay đổi
-  if (body.fingerprintJson || body.fingerprint) {
-    const fp = body.fingerprintJson || body.fingerprint;
-    updateData.fingerprint = typeof fp === 'string' ? JSON.parse(fp) : fp;
-    updateData.fingerprintJson = updateData.fingerprint;
-  }
-
-  const updatedProfile = await profileService.updateProfile(id, updateData);
-
-  res.json({
-    success: true,
-    message: 'Profile updated successfully',
-    data: updatedProfile,
-  });
 });
 
 /**
@@ -350,4 +441,120 @@ export const updateFingerprint = asyncHandler(async (req: Request, res: Response
   const updated = await profileService.updateProfile(id, { fingerprint: fp, fingerprintJson: fp });
   
   res.json({ success: true, data: updated.fingerprint });
+});
+
+/**
+ * IMPORT PROFILES - Import hàng loạt accounts từ text với Random Fingerprint
+ * Format: uid|password|twoFactor|email|emailPassword|recoveryEmail
+ */
+export const importProfiles = asyncHandler(async (req: Request, res: Response) => {
+  const { rawData } = req.body; 
+
+  if (!rawData) {
+    return res.status(400).json({ success: false, error: "No data provided" });
+  }
+
+  // SỬA: Dùng Regex này để tách dòng chuẩn xác cho cả Windows (\r\n) và Linux (\n)
+  const lines = rawData.split(/\r?\n/);
+  
+  const createdProfiles: any[] = [];
+  const errors: string[] = [];
+
+  try {
+    for (const line of lines) {
+      // 1. Dọn dẹp dòng (xóa khoảng trắng thừa đầu đuôi)
+      const trimmedLine = line.trim();
+      
+      // 2. Nếu dòng trống thì bỏ qua ngay -> Giúp xử lý việc paste dính chùm hay cách dòng đều được
+      if (!trimmedLine) continue; 
+
+      // 3. Cắt chuỗi
+      const parts = trimmedLine.split('|');
+      
+      // Validate cơ bản
+      if (parts.length < 2) {
+        // Log nhẹ để biết dòng nào lỗi, nhưng không dừng chương trình
+        console.log(`Skipping invalid line: ${trimmedLine}`);
+        continue; 
+      }
+
+      const uid = parts[0]?.trim();
+      const password = parts[1]?.trim();
+      
+      // Nếu thiếu UID hoặc Pass thì bỏ qua
+      if (!uid || !password) continue;
+
+      // Các trường phụ (nếu không có thì để rỗng)
+      const twoFactor = parts[2]?.trim() || "";
+      const email = parts[3]?.trim() || "";
+      const emailPassword = parts[4]?.trim() || "";
+      const recoveryEmail = parts[5]?.trim() || "";
+
+      // TẠO FINGERPRINT NGẪU NHIÊN NGAY TẠI ĐÂY
+      const randomFP = generateRandomFingerprint();
+
+      // 4. Tạo Profile
+      // Dùng await để đảm bảo tạo xong cái này mới tới cái kia (tránh overload DB)
+      try {
+        const profile = await prisma.profile.create({
+          data: {
+            name: uid, 
+            
+            // Lưu JSON Account
+            accountInfo: JSON.stringify({
+              uid,
+              password,
+              twoFactor,
+              email,
+              emailPassword,
+              recoveryEmail
+            }),
+            
+            // Lưu full bộ thông số giả lập vào cột fingerprint (dạng Json)
+            fingerprint: randomFP,
+            fingerprintJson: randomFP,
+            
+            // Lưu UserAgent ra cột ngoài để dễ nhìn
+            userAgent: randomFP.userAgent,
+            
+            // Các giá trị mặc định cần thiết
+            os: randomFP.os === 'windows' ? 'Windows 10' : randomFP.os === 'mac' ? 'macOS' : 'Linux',
+            osName: randomFP.os === 'windows' ? 'Windows 10' : randomFP.os === 'mac' ? 'macOS' : 'Linux',
+            platform: randomFP.os === 'windows' ? 'Win32' : randomFP.os === 'mac' ? 'MacIntel' : 'Linux x86_64',
+            screenWidth: randomFP.screenWidth,
+            screenHeight: randomFP.screenHeight,
+            hardwareConcurrency: randomFP.hardwareConcurrency,
+            deviceMemory: randomFP.deviceMemory,
+            webglVendor: randomFP.webglVendor,
+            webglRenderer: randomFP.webglRenderer,
+            canvasMode: "noise",
+            audioContextMode: "noise",
+            webglMetadataMode: "mask",
+            macAddress: await randomMac(),
+          }
+        });
+
+        createdProfiles.push(profile);
+      } catch (err: any) {
+        console.error("Error creating profile for line:", trimmedLine, err);
+        errors.push(`Failed to create profile for ${uid}: ${err.message}`);
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Successfully imported ${createdProfiles.length} accounts with RANDOM Fingerprints.`, 
+      data: createdProfiles,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (error: any) {
+    console.error("Bulk import error:", error);
+    // Trả về lỗi chi tiết để debug
+    res.status(500).json({ 
+      success: false,
+      error: 'Import failed', 
+      details: error.message 
+    });
+  }
 });
