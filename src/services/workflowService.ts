@@ -48,4 +48,3 @@ export const deleteWorkflow = async (id: number) => {
     where: { id },
   });
 };
-
