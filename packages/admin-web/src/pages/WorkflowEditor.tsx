@@ -181,6 +181,13 @@ export default function WorkflowEditor() {
   }, [id, isNew])
 
   useEffect(() => {
+    if (isNew) {
+      setNodes([])
+      setEdges([])
+    }
+  }, [id, isNew, setNodes, setEdges])
+
+  useEffect(() => {
     // Run validation when nodes/edges change
     const issues = validateWorkflow(nodes as any, edges)
     setValidationIssues(issues)

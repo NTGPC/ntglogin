@@ -26,7 +26,7 @@ const DEFAULT_CHROME_PATHS = [
 
   process.env.NTG_CORE_PATH,
 
-  String.raw`D:\Tool\chrome-win64\chrome.exe`, 
+  String.raw`D:\Tool\chrome-win64\chrome.exe`,
 
   path.join(process.cwd(), 'packages', 'api', 'browser-core', 'ntg-core.exe'),
 
@@ -34,13 +34,21 @@ const DEFAULT_CHROME_PATHS = [
 
 
 
-// --- HÀM XỬ LÝ BIẾN (In log nếu thiếu dữ liệu) ---
+const randomDelay = (min: number = 2000, max: number = 5000) => {
+
+  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
+
+  return new Promise(resolve => setTimeout(resolve, ms));
+
+};
+
+
 
 function replaceVariables(text: string, profile: any): string {
 
   if (!text) return "";
 
-  
+  let result = text;
 
   let account: any = {};
 
@@ -52,21 +60,9 @@ function replaceVariables(text: string, profile: any): string {
 
     }
 
-  } catch (e) { console.error("!!! Lỗi parse Account Info:", e); }
+  } catch (e) {}
 
 
-
-  // DEBUG: Kiểm tra xem có UID không
-
-  if (!account.uid && !account.username && !profile.name) {
-
-      console.warn("!!! CẢNH BÁO: Không tìm thấy UID/Username trong Profile. Biến {{uid}} sẽ rỗng!");
-
-  }
-
-
-
-  let result = text;
 
   const uid = account.uid || account.username || profile.name || "";
 
@@ -102,19 +98,65 @@ function replaceVariables(text: string, profile: any): string {
 
 
 
+async function handleSmart2FA(page: Page, code2FA: string) {
+
+    console.log(">>> [SMART 2FA] Checking...");
+
+    try {
+
+        const tryAnotherWayBtn = await (page as any).$x("//div[contains(text(), 'Try another way')] | //span[contains(text(), 'Try another way')]");
+
+        if (tryAnotherWayBtn.length > 0) {
+
+            await tryAnotherWayBtn[0].click();
+
+            await randomDelay(2000, 3000);
+
+            const authAppOption = await (page as any).$x("//div[contains(text(), 'Authentication app')] | //span[contains(text(), 'Authentication app')]");
+
+            if (authAppOption.length > 0) {
+
+                await authAppOption[0].click();
+
+                await randomDelay(1000, 2000);
+
+                const continueBtn = await (page as any).$x("//span[contains(text(), 'Continue')]");
+
+                if (continueBtn.length > 0) await continueBtn[0].click();
+
+            }
+
+        }
+
+        const inputSelector = 'input[type="text"], input[name="approvals_code"]';
+
+        try {
+
+            await page.waitForSelector(inputSelector, { timeout: 5000 });
+
+            await page.type(inputSelector, code2FA, { delay: 100 });
+
+            await page.keyboard.press('Enter');
+
+            const submitBtn = await page.$('button[type="submit"], button[value="Continue"]');
+
+            if (submitBtn) await submitBtn.click();
+
+        } catch (e) {}
+
+    } catch (error) {}
+
+}
+
+
+
 async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
-  console.log(`>>> [WORKFLOW] Bắt đầu chạy kịch bản cho: ${profile.name}`);
+  console.log(`>>> [WORKFLOW] Start: ${profile.name}`);
 
   
 
-  if (!workflow || !workflow.data) {
-
-      console.error("!!! [LỖI] Workflow rỗng.");
-
-      return;
-
-  }
+  if (!workflow || !workflow.data) return;
 
 
 
@@ -140,19 +182,21 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   
 
-  // Tìm nút Start (Mở rộng phạm vi tìm kiếm)
+  let code2FA = "";
 
-  let currentId = nodes.find(n => {
+  try {
 
-      const t = n.type?.toLowerCase();
+      let acc: any = {};
 
-      return t === 'start' || t === 'startnode' || t === 'begin';
+      if (profile.accountInfo) acc = JSON.parse(profile.accountInfo);
 
-  })?.id;
+      if (acc.twoFactor) code2FA = authenticator.generate(acc.twoFactor.replace(/\s/g, ''));
+
+  } catch(e){}
 
 
 
-  // Fallback: Nếu không có nút Start, lấy nút đầu tiên
+  let currentId = nodes.find(n => ['start', 'startnode'].includes(n.type?.toLowerCase()))?.id;
 
   if (!currentId && nodes.length > 0) currentId = nodes[0].id;
 
@@ -170,125 +214,139 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
 
 
-    // CHUẨN HÓA TÊN NODE ĐỂ TRÁNH LỖI TYPE/TYPETEXT
-
-    let type = node.type?.toLowerCase().replace(/\s/g, ''); // Xóa hết dấu cách: "Type Text" -> "typetext"
+    let type = node.type?.toLowerCase().replace(/\s/g, '');
 
     const config = node.data?.config || node.data || {};
 
 
 
-    console.log(`>>> [BƯỚC ${step}] Node: ${node.type} (Hiểu là: ${type})`);
+    console.log(`>>> [STEP ${step}] Node: ${node.type}`);
+
+
+
+    const captcha = await page.$('iframe[title*="reCAPTCHA"]');
+
+    if (captcha) await new Promise(r => setTimeout(r, 30000));
 
 
 
     try {
 
-      // 1. OPEN PAGE
-
-      if (type === 'openpage' || type === 'openurl' || type === 'open-url') {
+      if (type === 'openpage' || type === 'openurl') {
 
          const url = config.url || config.value;
 
-         if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+         if (url) {
 
-      } 
+             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-      // 2. CLICK
-
-      else if (type === 'click' || type === 'clicknode') {
-
-         const sel = config.selector || config.target;
-
-         if (sel) {
-
-           console.log(`      -> Đang Click: ${sel}`);
-
-           try {
-
-               await page.waitForSelector(sel, { timeout: 5000 });
-
-               await Promise.all([
-
-                   new Promise(r => setTimeout(r, 1000)),
-
-                   page.click(sel),
-
-                   // Không chờ nav nữa để tránh treo
-
-               ]);
-
-           } catch (e) { console.warn(`      [!] Không click được (bỏ qua): ${sel}`); }
+             await randomDelay(2000, 4000);
 
          }
 
       } 
 
-      // 3. TYPE TEXT (QUAN TRỌNG: CHẤP NHẬN NHIỀU TÊN)
+      else if (type === 'click' || type === 'clicknode') {
 
-      else if (type === 'type' || type === 'typetext' || type === 'fill' || type === 'input') {
+         let sel = config.selector || config.target;
+
+         if (sel) {
+
+           const isForce = sel.startsWith('force:');
+
+           if (isForce) sel = sel.replace('force:', '').trim();
+
+
+
+           try {
+
+               await page.waitForSelector(sel, { timeout: 10000 });
+
+               if (isForce) {
+
+                   await page.evaluate((selector) => {
+
+                       let el: any = document.querySelector(selector);
+
+                       if (!el && selector.startsWith('//')) {
+
+                           el = document.evaluate(selector, document, null, 9, null).singleNodeValue;
+
+                       }
+
+                       if (el) el.click();
+
+                   }, sel);
+
+               } else {
+
+                   await randomDelay(1000, 2000);
+
+                   await Promise.all([
+
+                       page.click(sel),
+
+                       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {})
+
+                   ]);
+
+               }
+
+           } catch (e) { console.warn(`[!] Click Failed:`, e); }
+
+         }
+
+      } 
+
+      else if (type === 'type' || type === 'typetext' || type === 'input') {
 
          const sel = config.selector || config.target;
 
          const txt = config.text || config.value;
 
-         
-
-         console.log(`      -> Kiểm tra nhập liệu: Selector=${sel} | Text=${txt}`);
-
-
-
          if (sel && txt) {
 
-           const finalTxt = replaceVariables(txt, profile);
+           if (txt.includes('{{2fa}}')) await handleSmart2FA(page, code2FA);
 
-           console.log(`      -> Nội dung sẽ nhập: "${finalTxt}"`);
+           else {
 
+               const finalTxt = replaceVariables(txt, profile);
 
+               await page.waitForSelector(sel, { timeout: 10000 });
 
-           try {
-
-               // Chờ Selector xuất hiện (quan trọng)
-
-               await page.waitForSelector(sel, { timeout: 5000 });
-
-               
-
-               // Clear nội dung cũ
+               await randomDelay(1000, 2000);
 
                await page.evaluate(s => { const el = document.querySelector(s); if(el) (el as any).value = ''; }, sel);
 
-               
-
-               // Nhập nội dung mới
-
-               await page.type(sel, finalTxt, { delay: 50 });
-
-               console.log(`      -> Đã nhập xong!`);
-
-           } catch (e) {
-
-               console.error(`      !!! [LỖI] Không tìm thấy ô nhập liệu: ${sel}. Kiểm tra lại Selector!`);
+               await page.type(sel, finalTxt, { delay: 100 });
 
            }
-
-         } else {
-
-             console.warn("      !!! [LỖI] Thiếu Selector hoặc Text trong Workflow");
 
          }
 
       } 
 
-      // 4. WAIT
-
       else if (type === 'wait') {
 
-         await new Promise(r => setTimeout(r, Number(config.milliseconds || 1000)));
+         const ms = Number(config.milliseconds || 1000);
+
+         console.log(`      -> Waiting: ${ms}ms`);
+
+         await new Promise(r => setTimeout(r, ms));
 
       }
 
-    } catch (e) { console.warn(`Lỗi Node:`, e); }
+    } catch (e) { 
+
+        console.warn(`[!] Node Error (Ignored):`, e);
+
+        if (String(e).includes('detached Frame')) {
+
+            console.log(">>> [INFO] Phát hiện chuyển trang (Detached Frame), tiếp tục node sau...");
+
+        }
+
+    }
 
     
 
@@ -296,13 +354,11 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   }
 
-  console.log(">>> [WORKFLOW] Kết thúc.");
+  console.log(">>> [WORKFLOW] Done.");
 
 }
 
 
-
-// --- MAIN ---
 
 export async function runAndManageBrowser(profile: any, workflow: any, options: any): Promise<void> {
 
@@ -334,9 +390,9 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
         '--disable-blink-features=AutomationControlled',
 
-        `--user-data-dir=${profileDir}`,
+        '--no-first-run', '--disable-notifications', '--no-default-browser-check',
 
-        '--no-first-run', '--disable-notifications'
+        '--password-store=basic'
 
       ];
 
@@ -352,6 +408,8 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
         executablePath: exPath,
 
+        userDataDir: profileDir,
+
         args,
 
         defaultViewport: null,
@@ -364,7 +422,15 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       browserInstances.set(options.sessionId, browser);
 
-      const page = (await browser.pages())[0] || await browser.newPage();
+      
+
+      const pages = await browser.pages();
+
+      const page = pages.length > 0 ? pages[0] : await browser.newPage();
+
+      
+
+      await page.bringToFront();
 
 
 
@@ -376,33 +442,13 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
 
 
-      await page.evaluateOnNewDocument(() => {
-
-        const newProto = (navigator as any).__proto__;
-
-        delete newProto.webdriver;
-
-        (navigator as any).__proto__ = newProto;
-
-      });
+      try { await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 30000 }); } catch(e) {}
 
 
-
-      // 1. Mở Facebook trước (Failsafe)
-
-      try {
-
-          await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-      } catch(e) {}
-
-
-
-      // 2. Chạy Workflow
 
       if (workflow) await executeWorkflowOnPage(page, workflow, profile);
 
-      else console.log(">>> Không có workflow.");
+      else console.log(">>> No workflow.");
 
 
 
