@@ -647,6 +647,28 @@ export default function Profiles() {
     openRunWorkflowDialog(null, bulkWorkflowId, selectedIds)
   }
 
+  const handleRunSelected = async () => {
+    if (selectedIds.length === 0) {
+      alert('Vui lòng tích chọn ít nhất 1 profile để chạy!')
+      return
+    }
+    try {
+      const response = await apiClient.post('/api/profiles/bulk-run', {
+        profileIds: selectedIds,
+        concurrency: 5 // Số luồng chạy cùng lúc (Tùy chỉnh)
+      })
+      if (response.data.success) {
+        alert(`🚀 Đang khởi động ${selectedIds.length} profiles!`)
+      } else {
+        alert('Lỗi: ' + (response.data.error || 'Unknown error'))
+      }
+    } catch (error: any) {
+      console.error(error)
+      const errorMessage = error.response?.data?.error || error.message || 'Lỗi kết nối Server!'
+      alert('Lỗi: ' + errorMessage)
+    }
+  }
+
   useEffect(() => {
     if (editingProfile) {
       reset({
@@ -1032,6 +1054,17 @@ export default function Profiles() {
           </Button>
           <Button variant="outline" onClick={applyProxyToAll}>
             Apply to All
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            onClick={handleRunSelected} 
+            disabled={!selectedIds.length} 
+            className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+          >
+            <Play className="mr-2 h-4 w-4" />
+            Run selected profile
           </Button>
         </div>
       {SHOW_WORKFLOWS && (

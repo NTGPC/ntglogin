@@ -6,6 +6,7 @@ const router = Router();
 // Route import phải đặt TRƯỚC route /:id để tránh conflict
 router.post('/import', profileController.importProfiles);
 router.post('/run-bulk', profileController.runBulkProfiles);
+router.post('/bulk-run', profileController.runBulkProfiles); // Alias for frontend compatibility
 
 router.get('/', profileController.getAll);
 router.get('/:id', profileController.getById);
