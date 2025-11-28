@@ -10,9 +10,15 @@ import fs from 'fs';
 
 import { authenticator } from 'otplib';
 
+
+
 puppeteer.use(StealthPlugin());
 
+
+
 const browserInstances = new Map<number, Browser>();
+
+
 
 const DEFAULT_CHROME_PATHS = [
 
@@ -26,6 +32,8 @@ const DEFAULT_CHROME_PATHS = [
 
 ];
 
+
+
 const randomDelay = (min: number = 2000, max: number = 5000) => {
 
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -33,6 +41,8 @@ const randomDelay = (min: number = 2000, max: number = 5000) => {
   return new Promise(resolve => setTimeout(resolve, ms));
 
 };
+
+
 
 function replaceVariables(text: string, profile: any): string {
 
@@ -51,6 +61,8 @@ function replaceVariables(text: string, profile: any): string {
     }
 
   } catch (e) {}
+
+
 
   const uid = account.uid || account.username || profile.name || "";
 
@@ -84,23 +96,23 @@ function replaceVariables(text: string, profile: any): string {
 
 }
 
+
+
+// === MAGIC AVATAR ===
+
 async function clickMagicAvatar(page: Page) {
 
-    console.log("      -> 🧙‍♂️ Magic Avatar: Đang định vị tọa độ ảnh...");
-
-    
+    console.log("      -> 🧙‍♂️ Magic Avatar...");
 
     try {
 
         const avatarSelector = 'div[role="main"] image[preserveAspectRatio^="xMidYMid"]';
 
-        
-
         try { await page.waitForSelector(avatarSelector, { timeout: 3000 }); } catch(e){}
 
-        const element = await page.$(avatarSelector);
 
-        
+
+        const element = await page.$(avatarSelector);
 
         if (element) {
 
@@ -112,15 +124,9 @@ async function clickMagicAvatar(page: Page) {
 
                 const y = box.y + box.height / 2;
 
-                
+                console.log(`      -> 🎯 Click tọa độ ảnh: X=${x}, Y=${y}`);
 
-                console.log(`      -> 🎯 Tìm thấy Avatar Page tại: X=${x}, Y=${y}. Click!`);
-
-                
-
-                await page.mouse.move(x, y, { steps: 10 });
-
-                await randomDelay(200, 500);
+                await page.mouse.move(x, y, { steps: 5 });
 
                 await page.mouse.down();
 
@@ -134,23 +140,23 @@ async function clickMagicAvatar(page: Page) {
 
         }
 
-        console.warn("      -> [!] Không tìm thấy Selector Magic.");
+    } catch (e) {}
 
-    } catch (e) {
+    
 
-        console.error("      -> [!] Lỗi Magic Avatar:", e);
-
-    }
+    // Fallback
 
     const hardX = 170;
 
     const hardY = 370; 
 
-    console.log(`      -> 🔨 BÚA TẠ: Click thẳng vào X=${hardX}, Y=${hardY}`);
+    console.log(`      -> 🔨 Búa tạ: Click X=${hardX}, Y=${hardY}`);
 
     await page.mouse.click(hardX, hardY);
 
 }
+
+
 
 async function handleSmart2FA(page: Page, code2FA: string) {
 
@@ -200,11 +206,19 @@ async function handleSmart2FA(page: Page, code2FA: string) {
 
 }
 
+
+
 async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
-  console.log(`>>> [WORKFLOW] Start: ${profile.name}`);
+  const pid = profile.id;
+
+  console.log(`[${pid}] WORKFLOW START`);
+
+  
 
   if (!workflow || !workflow.data) return;
+
+
 
   let nodes: any[] = [];
 
@@ -219,6 +233,8 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
     edges = typeof wd.edges === 'string' ? JSON.parse(wd.edges) : wd.edges;
 
   } catch (e) { return; }
+
+
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
@@ -238,9 +254,13 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   } catch(e){}
 
+
+
   let currentId = nodes.find(n => ['start', 'startnode'].includes(n.type?.toLowerCase()))?.id;
 
   if (!currentId && nodes.length > 0) currentId = nodes[0].id;
+
+
 
   let step = 0;
 
@@ -252,11 +272,17 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
     if (!node) break;
 
+
+
     let type = node.type?.toLowerCase().replace(/\s/g, '');
 
     const config = node.data?.config || node.data || {};
 
-    console.log(`>>> [STEP ${step}] Node: ${node.type}`);
+
+
+    console.log(`[${pid}] STEP ${step}: ${node.type}`);
+
+
 
     try {
 
@@ -290,13 +316,11 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
                sel = sel.replace('force:', '').trim();
 
-               console.log(`      -> 🔥 FORCE CLICK: ${sel}`);
-
                
+
+               // Fix XPath JS Click
 
                try { await page.waitForSelector(sel, { timeout: 5000 }); } catch(e) {}
-
-               
 
                const clicked = await page.evaluate((s) => {
 
@@ -304,13 +328,13 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
                    if (s.startsWith('/') || s.startsWith('(')) {
 
-                        const r = document.evaluate(s, document, null, 9, null);
+                       const result = document.evaluate(s, document, null, 9, null);
 
-                        el = r.singleNodeValue;
+                       el = result.singleNodeValue;
 
                    } else {
 
-                        el = document.querySelector(s);
+                       el = document.querySelector(s);
 
                    }
 
@@ -320,15 +344,15 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
                }, sel);
 
-               if (!clicked) console.warn("      [!] JS Click không tìm thấy.");
+               
+
+               if(!clicked) console.warn(`[${pid}] JS Click missed.`);
 
                await randomDelay(2000, 3000);
 
            } 
 
            else {
-
-               console.log(`      -> 🖱️ HUMAN CLICK: ${sel}`);
 
                await page.waitForSelector(sel, { timeout: 10000 });
 
@@ -382,7 +406,7 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
       }
 
-    } catch (e) { console.warn(`[!] Node Error (Ignored):`, e); }
+    } catch (e) { console.warn(`[${pid}] Node Error (Ignored):`, e); }
 
     
 
@@ -390,9 +414,11 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   }
 
-  console.log(">>> [WORKFLOW] Done.");
+  console.log(`[${pid}] DONE.`);
 
 }
+
+
 
 export async function runAndManageBrowser(profile: any, workflow: any, options: any): Promise<void> {
 
@@ -404,6 +430,8 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
 
+
+
       let exPath = undefined;
 
       for (const p of DEFAULT_CHROME_PATHS) {
@@ -411,6 +439,8 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
         if (p && fs.existsSync(p)) { exPath = p; break; }
 
       }
+
+
 
       const args = [
 
@@ -422,13 +452,27 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
         '--no-first-run', '--disable-notifications', '--no-default-browser-check',
 
-        '--password-store=basic'
+        '--password-store=basic',
+
+        // === CỜ CHỐNG NGỦ ĐÔNG & AUTO PLAY ===
+
+        '--disable-background-timer-throttling',
+
+        '--disable-backgrounding-occluded-windows',
+
+        '--disable-renderer-backgrounding',
+
+        '--autoplay-policy=no-user-gesture-required', // Ép video tự chạy
+
+        '--disable-features=CalculateNativeWinOcclusion'
 
       ];
 
       
 
       if (options.proxy) args.push(`--proxy-server=${options.proxy.type}://${options.proxy.host}:${options.proxy.port}`);
+
+
 
       const browser = await puppeteer.launch({
 
@@ -446,9 +490,9 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       });
 
-      browserInstances.set(options.sessionId, browser);
 
-      
+
+      browserInstances.set(options.sessionId, browser);
 
       const pages = await browser.pages();
 
@@ -456,27 +500,71 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       await page.bringToFront();
 
+
+
+      // Ép Viewport
+
       await page.setViewport({ width: 1280, height: 800 });
+
+
 
       if (options.proxy?.username) await page.authenticate({ username: options.proxy.username, password: options.proxy.password });
 
       if (options.userAgent) await page.setUserAgent(options.userAgent);
 
+
+
+      // === HACK: LUÔN BÁO LÀ ĐANG NHÌN MÀN HÌNH (BYPASS AUTO-PAUSE) ===
+
       await page.evaluateOnNewDocument(() => {
+
+        // Xóa dấu vết Bot
 
         const newProto = (navigator as any).__proto__;
 
         delete newProto.webdriver;
 
+        // @ts-ignore
+
         (navigator as any).__proto__ = newProto;
+
+
+
+        // Fake Visibility (Quan trọng nhất để chạy nền)
+
+        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+
+        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+
+        
+
+        // Chặn sự kiện làm mờ (Blur)
+
+        window.addEventListener('blur', (e) => e.stopImmediatePropagation(), true);
+
+        window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
 
       });
 
+
+
       try { await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 30000 }); } catch(e) {}
 
-      if (workflow) await executeWorkflowOnPage(page, workflow, profile);
 
-      else console.log(">>> No workflow.");
+
+      // Chạy không cần await để nó chạy song song
+
+      if (workflow) {
+
+          executeWorkflowOnPage(page, workflow, profile).then(() => {
+
+              // Xong thì kệ nó
+
+          });
+
+      } else console.log(">>> No workflow.");
+
+
 
       browser.on('disconnected', () => {
 
@@ -485,6 +573,8 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
         resolve();
 
       });
+
+
 
     } catch (error) {
 
@@ -498,6 +588,8 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
 }
 
+
+
 export async function closeBrowser(sessionId: number) {
 
   const b = browserInstances.get(sessionId);
@@ -505,6 +597,8 @@ export async function closeBrowser(sessionId: number) {
   if (b) { await b.close(); browserInstances.delete(sessionId); }
 
 }
+
+
 
 export async function getOpenPageUrls(sessionId: number): Promise<string[]> {
 
@@ -515,5 +609,7 @@ export async function getOpenPageUrls(sessionId: number): Promise<string[]> {
     try { return (await b.pages()).map(p => p.url()); } catch { return []; }
 
 }
+
+
 
 export const launchBrowser = runAndManageBrowser;

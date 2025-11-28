@@ -4,6 +4,7 @@ import { AppError, asyncHandler } from '../utils/errorHandler';
 import prisma from '../prismaClient';
 import { randomUnique as randomMac } from '../services/macService';
 import { getUniqueUA } from '../services/userAgentProvider';
+import pLimit from 'p-limit';
 
 // ============================================================================
 // === HELPER FUNCTIONS ===
@@ -557,4 +558,68 @@ export const importProfiles = asyncHandler(async (req: Request, res: Response) =
       details: error.message 
     });
   }
+});
+
+export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) => {
+  const { profileIds, concurrency } = req.body;
+
+  if (!profileIds || !Array.isArray(profileIds)) {
+      return res.status(400).json({ error: "Cần danh sách profileIds" });
+  }
+
+  const limit = pLimit(concurrency || 5);
+  const browserService = await import('../services/browserService');
+
+  console.log(`[BULK] Bắt đầu kích hoạt ${profileIds.length} profiles...`);
+
+  void profileIds.map((id) => {
+      return limit(async () => {
+          try {
+              const profile = await prisma.profile.findUnique({
+                  where: { id: parseInt(String(id)) },
+                  include: { workflow: true, proxy: true }
+              });
+
+              if (!profile) return;
+
+              let proxyConfig = undefined;
+              if (profile.proxy) {
+                  proxyConfig = {
+                      host: profile.proxy.host,
+                      port: profile.proxy.port,
+                      username: profile.proxy.username,
+                      password: profile.proxy.password,
+                      type: profile.proxy.type
+                  };
+              }
+
+              const session = await prisma.session.create({
+                  data: { profile_id: profile.id, status: 'running', started_at: new Date() }
+              });
+
+              console.log(`[LAUNCH] Đang mở Profile ${profile.id}...`);
+
+              browserService.runAndManageBrowser(
+                  profile,
+                  profile.workflow,
+                  {
+                      profileId: profile.id,
+                      sessionId: session.id,
+                      userAgent: profile.userAgent,
+                      proxy: proxyConfig
+                  }
+              ).then(() => {
+                  prisma.session.update({
+                      where: { id: session.id },
+                      data: { status: 'stopped', stopped_at: new Date() }
+                  });
+              });
+
+          } catch (e) {
+              console.error(`[ERROR] Profile ${id} fail:`, e);
+          }
+      });
+  });
+
+  res.json({ success: true, message: `Đang khởi động ${profileIds.length} profiles...` });
 });
