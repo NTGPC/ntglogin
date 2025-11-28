@@ -180,7 +180,7 @@ export default function WorkflowEditor() {
     }
   }, [id, isNew])
 
-  useEffect(() => {
+   useEffect(() => {
     if (isNew) {
       setNodes([])
       setEdges([])

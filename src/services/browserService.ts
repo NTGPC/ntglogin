@@ -10,15 +10,9 @@ import fs from 'fs';
 
 import { authenticator } from 'otplib';
 
-
-
 puppeteer.use(StealthPlugin());
 
-
-
 const browserInstances = new Map<number, Browser>();
-
-
 
 const DEFAULT_CHROME_PATHS = [
 
@@ -32,8 +26,6 @@ const DEFAULT_CHROME_PATHS = [
 
 ];
 
-
-
 const randomDelay = (min: number = 2000, max: number = 5000) => {
 
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -41,8 +33,6 @@ const randomDelay = (min: number = 2000, max: number = 5000) => {
   return new Promise(resolve => setTimeout(resolve, ms));
 
 };
-
-
 
 function replaceVariables(text: string, profile: any): string {
 
@@ -61,8 +51,6 @@ function replaceVariables(text: string, profile: any): string {
     }
 
   } catch (e) {}
-
-
 
   const uid = account.uid || account.username || profile.name || "";
 
@@ -96,15 +84,79 @@ function replaceVariables(text: string, profile: any): string {
 
 }
 
+async function clickMagicAvatar(page: Page) {
 
+    console.log("      -> 🧙‍♂️ Magic Avatar: Đang định vị tọa độ ảnh...");
 
-async function handleSmart2FA(page: Page, code2FA: string) {
-
-    console.log(">>> [SMART 2FA] Checking...");
+    
 
     try {
 
-        const tryAnotherWayBtn = await (page as any).$x("//div[contains(text(), 'Try another way')] | //span[contains(text(), 'Try another way')]");
+        const avatarSelector = 'div[role="main"] image[preserveAspectRatio^="xMidYMid"]';
+
+        
+
+        try { await page.waitForSelector(avatarSelector, { timeout: 3000 }); } catch(e){}
+
+        const element = await page.$(avatarSelector);
+
+        
+
+        if (element) {
+
+            const box = await element.boundingBox();
+
+            if (box) {
+
+                const x = box.x + box.width / 2;
+
+                const y = box.y + box.height / 2;
+
+                
+
+                console.log(`      -> 🎯 Tìm thấy Avatar Page tại: X=${x}, Y=${y}. Click!`);
+
+                
+
+                await page.mouse.move(x, y, { steps: 10 });
+
+                await randomDelay(200, 500);
+
+                await page.mouse.down();
+
+                await new Promise(r => setTimeout(r, 100));
+
+                await page.mouse.up();
+
+                return;
+
+            }
+
+        }
+
+        console.warn("      -> [!] Không tìm thấy Selector Magic.");
+
+    } catch (e) {
+
+        console.error("      -> [!] Lỗi Magic Avatar:", e);
+
+    }
+
+    const hardX = 170;
+
+    const hardY = 370; 
+
+    console.log(`      -> 🔨 BÚA TẠ: Click thẳng vào X=${hardX}, Y=${hardY}`);
+
+    await page.mouse.click(hardX, hardY);
+
+}
+
+async function handleSmart2FA(page: Page, code2FA: string) {
+
+    try {
+
+        const tryAnotherWayBtn = await (page as any).$x("//div[contains(text(), 'Try another way')]");
 
         if (tryAnotherWayBtn.length > 0) {
 
@@ -112,7 +164,7 @@ async function handleSmart2FA(page: Page, code2FA: string) {
 
             await randomDelay(2000, 3000);
 
-            const authAppOption = await (page as any).$x("//div[contains(text(), 'Authentication app')] | //span[contains(text(), 'Authentication app')]");
+            const authAppOption = await (page as any).$x("//div[contains(text(), 'Authentication app')]");
 
             if (authAppOption.length > 0) {
 
@@ -148,17 +200,11 @@ async function handleSmart2FA(page: Page, code2FA: string) {
 
 }
 
-
-
 async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   console.log(`>>> [WORKFLOW] Start: ${profile.name}`);
 
-  
-
   if (!workflow || !workflow.data) return;
-
-
 
   let nodes: any[] = [];
 
@@ -173,8 +219,6 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
     edges = typeof wd.edges === 'string' ? JSON.parse(wd.edges) : wd.edges;
 
   } catch (e) { return; }
-
-
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
@@ -194,13 +238,9 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   } catch(e){}
 
-
-
   let currentId = nodes.find(n => ['start', 'startnode'].includes(n.type?.toLowerCase()))?.id;
 
   if (!currentId && nodes.length > 0) currentId = nodes[0].id;
-
-
 
   let step = 0;
 
@@ -212,23 +252,11 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
     if (!node) break;
 
-
-
     let type = node.type?.toLowerCase().replace(/\s/g, '');
 
     const config = node.data?.config || node.data || {};
 
-
-
     console.log(`>>> [STEP ${step}] Node: ${node.type}`);
-
-
-
-    const captcha = await page.$('iframe[title*="reCAPTCHA"]');
-
-    if (captcha) await new Promise(r => setTimeout(r, 30000));
-
-
 
     try {
 
@@ -252,53 +280,75 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
          if (sel) {
 
-           const isForce = sel.startsWith('force:');
+           if (sel === 'MAGIC_AVATAR') {
 
-           if (isForce) sel = sel.replace('force:', '').trim();
+               await clickMagicAvatar(page);
 
+           }
 
+           else if (sel.startsWith('force:')) {
 
-           try {
+               sel = sel.replace('force:', '').trim();
+
+               console.log(`      -> 🔥 FORCE CLICK: ${sel}`);
+
+               
+
+               try { await page.waitForSelector(sel, { timeout: 5000 }); } catch(e) {}
+
+               
+
+               const clicked = await page.evaluate((s) => {
+
+                   let el: any;
+
+                   if (s.startsWith('/') || s.startsWith('(')) {
+
+                        const r = document.evaluate(s, document, null, 9, null);
+
+                        el = r.singleNodeValue;
+
+                   } else {
+
+                        el = document.querySelector(s);
+
+                   }
+
+                   if (el) { el.click(); return true; }
+
+                   return false;
+
+               }, sel);
+
+               if (!clicked) console.warn("      [!] JS Click không tìm thấy.");
+
+               await randomDelay(2000, 3000);
+
+           } 
+
+           else {
+
+               console.log(`      -> 🖱️ HUMAN CLICK: ${sel}`);
 
                await page.waitForSelector(sel, { timeout: 10000 });
 
-               if (isForce) {
+               await randomDelay(1000, 2000);
 
-                   await page.evaluate((selector) => {
+               await Promise.all([
 
-                       let el: any = document.querySelector(selector);
+                   page.click(sel),
 
-                       if (!el && selector.startsWith('//')) {
+                   page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {})
 
-                           el = document.evaluate(selector, document, null, 9, null).singleNodeValue;
+               ]);
 
-                       }
-
-                       if (el) el.click();
-
-                   }, sel);
-
-               } else {
-
-                   await randomDelay(1000, 2000);
-
-                   await Promise.all([
-
-                       page.click(sel),
-
-                       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {})
-
-                   ]);
-
-               }
-
-           } catch (e) { console.warn(`[!] Click Failed:`, e); }
+           }
 
          }
 
       } 
 
-      else if (type === 'type' || type === 'typetext' || type === 'input') {
+      else if (type === 'type' || type === 'typetext') {
 
          const sel = config.selector || config.target;
 
@@ -316,8 +366,6 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
                await randomDelay(1000, 2000);
 
-               await page.evaluate(s => { const el = document.querySelector(s); if(el) (el as any).value = ''; }, sel);
-
                await page.type(sel, finalTxt, { delay: 100 });
 
            }
@@ -330,23 +378,11 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
          const ms = Number(config.milliseconds || 1000);
 
-         console.log(`      -> Waiting: ${ms}ms`);
-
          await new Promise(r => setTimeout(r, ms));
 
       }
 
-    } catch (e) { 
-
-        console.warn(`[!] Node Error (Ignored):`, e);
-
-        if (String(e).includes('detached Frame')) {
-
-            console.log(">>> [INFO] Phát hiện chuyển trang (Detached Frame), tiếp tục node sau...");
-
-        }
-
-    }
+    } catch (e) { console.warn(`[!] Node Error (Ignored):`, e); }
 
     
 
@@ -358,8 +394,6 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
 }
 
-
-
 export async function runAndManageBrowser(profile: any, workflow: any, options: any): Promise<void> {
 
   return new Promise(async (resolve, reject) => {
@@ -370,8 +404,6 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       if (!fs.existsSync(profileDir)) fs.mkdirSync(profileDir, { recursive: true });
 
-
-
       let exPath = undefined;
 
       for (const p of DEFAULT_CHROME_PATHS) {
@@ -379,8 +411,6 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
         if (p && fs.existsSync(p)) { exPath = p; break; }
 
       }
-
-
 
       const args = [
 
@@ -400,8 +430,6 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       if (options.proxy) args.push(`--proxy-server=${options.proxy.type}://${options.proxy.host}:${options.proxy.port}`);
 
-
-
       const browser = await puppeteer.launch({
 
         headless: false,
@@ -418,8 +446,6 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       });
 
-
-
       browserInstances.set(options.sessionId, browser);
 
       
@@ -428,29 +454,29 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       const page = pages.length > 0 ? pages[0] : await browser.newPage();
 
-      
-
       await page.bringToFront();
 
-
+      await page.setViewport({ width: 1280, height: 800 });
 
       if (options.proxy?.username) await page.authenticate({ username: options.proxy.username, password: options.proxy.password });
 
       if (options.userAgent) await page.setUserAgent(options.userAgent);
 
-      if (profile.screenWidth) await page.setViewport({ width: profile.screenWidth, height: profile.screenHeight });
+      await page.evaluateOnNewDocument(() => {
 
+        const newProto = (navigator as any).__proto__;
 
+        delete newProto.webdriver;
+
+        (navigator as any).__proto__ = newProto;
+
+      });
 
       try { await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 30000 }); } catch(e) {}
-
-
 
       if (workflow) await executeWorkflowOnPage(page, workflow, profile);
 
       else console.log(">>> No workflow.");
-
-
 
       browser.on('disconnected', () => {
 
@@ -459,8 +485,6 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
         resolve();
 
       });
-
-
 
     } catch (error) {
 
@@ -474,8 +498,6 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
 }
 
-
-
 export async function closeBrowser(sessionId: number) {
 
   const b = browserInstances.get(sessionId);
@@ -483,8 +505,6 @@ export async function closeBrowser(sessionId: number) {
   if (b) { await b.close(); browserInstances.delete(sessionId); }
 
 }
-
-
 
 export async function getOpenPageUrls(sessionId: number): Promise<string[]> {
 
@@ -495,7 +515,5 @@ export async function getOpenPageUrls(sessionId: number): Promise<string[]> {
     try { return (await b.pages()).map(p => p.url()); } catch { return []; }
 
 }
-
-
 
 export const launchBrowser = runAndManageBrowser;
