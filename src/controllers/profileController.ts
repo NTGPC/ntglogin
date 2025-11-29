@@ -561,20 +561,44 @@ export const importProfiles = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) => {
-  const { profileIds, concurrency } = req.body;
+  const { profileIds, concurrency, screenWidth, screenHeight, gridColumns, gridRows } = req.body;
+
+  // Default values nếu không truyền lên
+  const sWidth = screenWidth || 1920;
+  const sHeight = screenHeight || 1080;
+  const cols = gridColumns || 4; // Mặc định 4 cột
+  const rows = gridRows || 2;    // Mặc định 2 dòng
 
   if (!profileIds || !Array.isArray(profileIds)) {
       return res.status(400).json({ error: "Cần danh sách profileIds" });
   }
 
-  const limit = pLimit(concurrency || 5);
+  // Tính toán kích thước mỗi cửa sổ
+  const winWidth = Math.floor(sWidth / cols);
+  const winHeight = Math.floor(sHeight / rows);
+  const limit = pLimit(concurrency || cols * rows); // Số luồng nên bằng số ô trên lưới
   const browserService = await import('../services/browserService');
 
-  console.log(`[BULK] Bắt đầu kích hoạt ${profileIds.length} profiles...`);
+  console.log(`[BULK] Sắp xếp ${profileIds.length} profiles trên lưới ${cols}x${rows}...`);
 
-  void profileIds.map((id) => {
+  void profileIds.map((id, index) => {
       return limit(async () => {
           try {
+              // --- THUẬT TOÁN TÍNH TỌA ĐỘ (GRID CALCULATION) ---
+              // Tính vị trí dựa trên index trong mảng (0, 1, 2...)
+              // Ví dụ: Lưới 5 cột. Index 6 sẽ nằm ở Dòng 1, Cột 1.
+              
+              // Modulo để quay vòng vị trí nếu số profile > số ô lưới
+              const positionIndex = index % (cols * rows); 
+              
+              const colIndex = positionIndex % cols; // Cột thứ mấy (0, 1, 2...)
+              const rowIndex = Math.floor(positionIndex / cols); // Dòng thứ mấy (0, 1...)
+              const positionX = colIndex * winWidth;
+              const positionY = rowIndex * winHeight;
+              
+              console.log(`[LAYOUT] Profile ${id} -> Pos: [${positionX}, ${positionY}], Size: [${winWidth}x${winHeight}]`);
+
+              // Lấy thông tin từ DB
               const profile = await prisma.profile.findUnique({
                   where: { id: parseInt(String(id)) },
                   include: { workflow: true, proxy: true }
@@ -582,6 +606,7 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
 
               if (!profile) return;
 
+              // Config Proxy
               let proxyConfig = undefined;
               if (profile.proxy) {
                   proxyConfig = {
@@ -597,8 +622,7 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
                   data: { profile_id: profile.id, status: 'running', started_at: new Date() }
               });
 
-              console.log(`[LAUNCH] Đang mở Profile ${profile.id}...`);
-
+              // CHẠY BROWSER VỚI THAM SỐ VỊ TRÍ MỚI
               browserService.runAndManageBrowser(
                   profile,
                   profile.workflow,
@@ -606,7 +630,10 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
                       profileId: profile.id,
                       sessionId: session.id,
                       userAgent: profile.userAgent,
-                      proxy: proxyConfig
+                      proxy: proxyConfig,
+                      // Truyền tọa độ và kích thước xuống Service
+                      windowPosition: { x: positionX, y: positionY },
+                      windowSize: { width: winWidth, height: winHeight }
                   }
               ).then(() => {
                   prisma.session.update({
@@ -621,5 +648,5 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
       });
   });
 
-  res.json({ success: true, message: `Đang khởi động ${profileIds.length} profiles...` });
+  res.json({ success: true, message: `Đang khởi động và sắp xếp ${profileIds.length} profiles...` });
 });

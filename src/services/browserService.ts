@@ -98,59 +98,125 @@ function replaceVariables(text: string, profile: any): string {
 
 
 
-// === MAGIC AVATAR ===
+// === MAGIC AVATAR SIÊU CẤP: CHỈ CLICK CÁI TO NHẤT ===
 
-async function clickMagicAvatar(page: Page) {
+async function clickMagicAvatar(page: Page, pid: any) {
 
-    console.log("      -> 🧙‍♂️ Magic Avatar...");
-
-    try {
-
-        const avatarSelector = 'div[role="main"] image[preserveAspectRatio^="xMidYMid"]';
-
-        try { await page.waitForSelector(avatarSelector, { timeout: 3000 }); } catch(e){}
-
-
-
-        const element = await page.$(avatarSelector);
-
-        if (element) {
-
-            const box = await element.boundingBox();
-
-            if (box) {
-
-                const x = box.x + box.width / 2;
-
-                const y = box.y + box.height / 2;
-
-                console.log(`      -> 🎯 Click tọa độ ảnh: X=${x}, Y=${y}`);
-
-                await page.mouse.move(x, y, { steps: 5 });
-
-                await page.mouse.down();
-
-                await new Promise(r => setTimeout(r, 100));
-
-                await page.mouse.up();
-
-                return;
-
-            }
-
-        }
-
-    } catch (e) {}
+    console.log(`[${pid}] 🧙‍♂️ Magic Avatar: Đang quét tìm Avatar TO NHẤT...`);
 
     
 
-    // Fallback
+    try {
+
+        // Chờ 1 chút cho trang load layout
+
+        await page.waitForSelector('image[preserveAspectRatio^="xMidYMid"]', { timeout: 5000 });
+
+
+
+        // Dùng Javascript để tìm và lọc
+
+        const found = await page.evaluate(() => {
+
+            // 1. Lấy tất cả ảnh có thuộc tính avatar
+
+            const images = document.querySelectorAll('image[preserveAspectRatio^="xMidYMid"]');
+
+            if (images.length === 0) return false;
+
+
+
+            let maxArea = 0;
+
+            let targetButton = null;
+
+
+
+            // 2. Duyệt qua từng ảnh để tìm cái to nhất
+
+            for (let i = 0; i < images.length; i++) {
+
+                const img = images[i];
+
+                const rect = img.getBoundingClientRect();
+
+                const area = rect.width * rect.height;
+
+
+
+                // Avatar profile luôn to (thường > 100x100), còn icon chỉ 30x30
+
+                if (area > maxArea && rect.width > 50) { 
+
+                    // Tìm ngược lên thẻ cha là Button
+
+                    const parentBtn = img.closest('div[role="button"]');
+
+                    if (parentBtn) {
+
+                        maxArea = area;
+
+                        targetButton = parentBtn;
+
+                    }
+
+                }
+
+            }
+
+
+
+            // 3. Nếu tìm thấy cái to nhất -> Click
+
+            if (targetButton) {
+
+                (targetButton as HTMLElement).click();
+
+                return true;
+
+            }
+
+            return false;
+
+        });
+
+
+
+        if (found) {
+
+            console.log(`[${pid}] ✅ Đã JS Click vào Avatar chính (Cái to nhất)!`);
+
+            await randomDelay(2000, 3000);
+
+            return;
+
+        } else {
+
+            console.warn(`[${pid}] [!] Không tìm thấy Avatar nào đủ to.`);
+
+        }
+
+
+
+    } catch (e) {
+
+        console.error(`[${pid}] [!] Lỗi Magic Avatar:`, e);
+
+    }
+
+
+
+    // FALLBACK: TỌA ĐỘ CỨNG (Nếu JS thất bại)
+
+    // Lưu ý: Tọa độ này chỉ đúng nếu Viewport là 1280x800
+
+    // Nếu cửa sổ bị bóp méo, tọa độ này có thể sai. Nhưng JS trên kia đã bao sân rồi.
 
     const hardX = 170;
 
     const hardY = 370; 
 
-    console.log(`      -> 🔨 Búa tạ: Click X=${hardX}, Y=${hardY}`);
+    console.log(`[${pid}] 🔨 Dùng búa tạ: X=${hardX}, Y=${hardY}`);
 
     await page.mouse.click(hardX, hardY);
 
@@ -294,6 +360,9 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+             // Zoom nhỏ lại để đảm bảo Avatar luôn hiện (Anti-responsive)
+             await page.evaluate(() => { document.body.style.zoom = '0.8'; });
+
              await randomDelay(2000, 4000);
 
          }
@@ -308,7 +377,7 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
            if (sel === 'MAGIC_AVATAR') {
 
-               await clickMagicAvatar(page);
+               await clickMagicAvatar(page, pid);
 
            }
 
@@ -440,13 +509,23 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       }
 
-
+      // === XỬ LÝ VỊ TRÍ VÀ KÍCH THƯỚC CỬA SỔ ===
+      const winX = options.windowPosition?.x || 0;
+      const winY = options.windowPosition?.y || 0;
+      // Nếu không có size truyền vào thì dùng 1280x800
+      const winW = options.windowSize?.width || 1280; 
+      const winH = options.windowSize?.height || 800;
 
       const args = [
 
         '--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
 
-        '--window-position=0,0', '--ignore-certificate-errors',
+        // --- QUAN TRỌNG: SET VỊ TRÍ VÀ KÍCH THƯỚC CỬA SỔ ---
+        `--window-position=${winX},${winY}`,
+        `--window-size=${winW},${winH}`,
+        // ----------------------------------------------------
+        '--force-device-scale-factor=0.8', // Thu nhỏ tỉ lệ hiển thị xuống 80%
+        '--ignore-certificate-errors',
 
         '--disable-blink-features=AutomationControlled',
 
@@ -500,10 +579,7 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       await page.bringToFront();
 
-
-
-      // Ép Viewport
-
+      // ÉP CỨNG VIEWPORT
       await page.setViewport({ width: 1280, height: 800 });
 
 

@@ -653,12 +653,24 @@ export default function Profiles() {
       return
     }
     try {
+      // Lấy kích thước màn hình hiện tại
+      const screenWidth = window.screen.availWidth
+      const screenHeight = window.screen.availHeight
+
+      // Ví dụ muốn chia 2 hàng, 2 cột (Chạy 4 cái)
+      const gridColumns = 2
+      const gridRows = 2
+
       const response = await apiClient.post('/api/profiles/bulk-run', {
         profileIds: selectedIds,
-        concurrency: 5 // Số luồng chạy cùng lúc (Tùy chỉnh)
+        concurrency: gridColumns * gridRows, // Số luồng bằng số ô trên lưới
+        screenWidth,    // Gửi kích thước màn hình lên
+        screenHeight,
+        gridColumns,    // Gửi số cột
+        gridRows        // Gửi số dòng
       })
       if (response.data.success) {
-        alert(`🚀 Đang khởi động ${selectedIds.length} profiles!`)
+        alert(`🚀 Đang khởi động và sắp xếp ${selectedIds.length} profiles trên lưới ${gridColumns}x${gridRows}!`)
       } else {
         alert('Lỗi: ' + (response.data.error || 'Unknown error'))
       }
