@@ -561,44 +561,45 @@ export const importProfiles = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) => {
-  const { profileIds, concurrency, screenWidth, screenHeight, gridColumns, gridRows } = req.body;
-
-  // Default values nếu không truyền lên
-  const sWidth = screenWidth || 1920;
-  const sHeight = screenHeight || 1080;
-  const cols = gridColumns || 4; // Mặc định 4 cột
-  const rows = gridRows || 2;    // Mặc định 2 dòng
+  const { profileIds, concurrency, screenWidth, screenHeight } = req.body;
 
   if (!profileIds || !Array.isArray(profileIds)) {
       return res.status(400).json({ error: "Cần danh sách profileIds" });
   }
 
-  // Tính toán kích thước mỗi cửa sổ
+  const count = profileIds.length;
+
+  // Tự động tính số cột và dòng dựa trên số lượng profile (cố gắng chia thành hình vuông hoặc chữ nhật)
+  const cols = Math.ceil(Math.sqrt(count)); 
+  const rows = Math.ceil(count / cols);
+
+  // Kích thước màn hình (Mặc định Full HD nếu không gửi lên)
+  const sWidth = screenWidth || 1920;
+  const sHeight = screenHeight || 1040; // Trừ thanh Taskbar
+
+  // Tính kích thước mỗi cửa sổ
   const winWidth = Math.floor(sWidth / cols);
   const winHeight = Math.floor(sHeight / rows);
-  const limit = pLimit(concurrency || cols * rows); // Số luồng nên bằng số ô trên lưới
-  const browserService = await import('../services/browserService');
 
-  console.log(`[BULK] Sắp xếp ${profileIds.length} profiles trên lưới ${cols}x${rows}...`);
+  console.log(`[LAYOUT] Sắp xếp ${count} profiles -> Lưới ${cols}x${rows} -> Size: ${winWidth}x${winHeight}`);
+
+  const limit = pLimit(concurrency || count); 
+  const browserService = await import('../services/browserService');
 
   void profileIds.map((id, index) => {
       return limit(async () => {
+          // === THÊM DÒNG NÀY: CHỜ RẢI RÁC ===
+          // Profile thứ 1 chạy ngay. Profile thứ 2 chờ 2s. Profile thứ 3 chờ 4s...
+          // Giúp CPU không bị shock và mạng không bị nghẽn
+          await new Promise(resolve => setTimeout(resolve, index * 2000));
+
           try {
-              // --- THUẬT TOÁN TÍNH TỌA ĐỘ (GRID CALCULATION) ---
-              // Tính vị trí dựa trên index trong mảng (0, 1, 2...)
-              // Ví dụ: Lưới 5 cột. Index 6 sẽ nằm ở Dòng 1, Cột 1.
-              
-              // Modulo để quay vòng vị trí nếu số profile > số ô lưới
-              const positionIndex = index % (cols * rows); 
-              
-              const colIndex = positionIndex % cols; // Cột thứ mấy (0, 1, 2...)
-              const rowIndex = Math.floor(positionIndex / cols); // Dòng thứ mấy (0, 1...)
+              // Tính tọa độ X, Y
+              const colIndex = index % cols;
+              const rowIndex = Math.floor(index / cols);
               const positionX = colIndex * winWidth;
               const positionY = rowIndex * winHeight;
-              
-              console.log(`[LAYOUT] Profile ${id} -> Pos: [${positionX}, ${positionY}], Size: [${winWidth}x${winHeight}]`);
 
-              // Lấy thông tin từ DB
               const profile = await prisma.profile.findUnique({
                   where: { id: parseInt(String(id)) },
                   include: { workflow: true, proxy: true }
@@ -606,7 +607,6 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
 
               if (!profile) return;
 
-              // Config Proxy
               let proxyConfig = undefined;
               if (profile.proxy) {
                   proxyConfig = {
@@ -622,7 +622,6 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
                   data: { profile_id: profile.id, status: 'running', started_at: new Date() }
               });
 
-              // CHẠY BROWSER VỚI THAM SỐ VỊ TRÍ MỚI
               browserService.runAndManageBrowser(
                   profile,
                   profile.workflow,
@@ -631,7 +630,7 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
                       sessionId: session.id,
                       userAgent: profile.userAgent,
                       proxy: proxyConfig,
-                      // Truyền tọa độ và kích thước xuống Service
+                      // Truyền tọa độ chuẩn
                       windowPosition: { x: positionX, y: positionY },
                       windowSize: { width: winWidth, height: winHeight }
                   }
@@ -648,5 +647,5 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
       });
   });
 
-  res.json({ success: true, message: `Đang khởi động và sắp xếp ${profileIds.length} profiles...` });
+  res.json({ success: true, message: `Đang khởi động ${count} profiles (Layout ${cols}x${rows})...` });
 });

@@ -98,65 +98,45 @@ function replaceVariables(text: string, profile: any): string {
 
 
 
-// === MAGIC AVATAR SIÊU CẤP: CHỈ CLICK CÁI TO NHẤT ===
+// === MAGIC CLICK: TÌM BẰNG MỌI GIÁ (Hỗ trợ cửa sổ nhỏ) ===
 
 async function clickMagicAvatar(page: Page, pid: any) {
 
-    console.log(`[${pid}] 🧙‍♂️ Magic Avatar: Đang quét tìm Avatar TO NHẤT...`);
+    console.log(`[${pid}] 🧙‍♂️ Magic Avatar: Quét tìm ảnh...`);
 
     
 
     try {
 
-        // Chờ 1 chút cho trang load layout
+        // Tìm cái thẻ ảnh (image) có thuộc tính đặc biệt
 
         await page.waitForSelector('image[preserveAspectRatio^="xMidYMid"]', { timeout: 5000 });
 
+        const clicked = await page.evaluate(() => {
 
-
-        // Dùng Javascript để tìm và lọc
-
-        const found = await page.evaluate(() => {
-
-            // 1. Lấy tất cả ảnh có thuộc tính avatar
+            // Lấy tất cả ảnh Avatar trên màn hình
 
             const images = document.querySelectorAll('image[preserveAspectRatio^="xMidYMid"]');
 
-            if (images.length === 0) return false;
+            
 
+            for (const img of images) {
 
-
-            let maxArea = 0;
-
-            let targetButton = null;
-
-
-
-            // 2. Duyệt qua từng ảnh để tìm cái to nhất
-
-            for (let i = 0; i < images.length; i++) {
-
-                const img = images[i];
+                // Kiểm tra kích thước (Lọc bỏ icon nhỏ)
 
                 const rect = img.getBoundingClientRect();
 
-                const area = rect.width * rect.height;
+                if (rect.width > 80) { // Avatar profile luôn > 80px
 
+                    // Tìm cái nút cha của nó để click
 
+                    const btn = img.closest('div[role="button"]') || img.parentElement;
 
-                // Avatar profile luôn to (thường > 100x100), còn icon chỉ 30x30
+                    if (btn) {
 
-                if (area > maxArea && rect.width > 50) { 
+                        (btn as HTMLElement).click(); // JS CLICK
 
-                    // Tìm ngược lên thẻ cha là Button
-
-                    const parentBtn = img.closest('div[role="button"]');
-
-                    if (parentBtn) {
-
-                        maxArea = area;
-
-                        targetButton = parentBtn;
+                        return true;
 
                     }
 
@@ -164,61 +144,25 @@ async function clickMagicAvatar(page: Page, pid: any) {
 
             }
 
-
-
-            // 3. Nếu tìm thấy cái to nhất -> Click
-
-            if (targetButton) {
-
-                (targetButton as HTMLElement).click();
-
-                return true;
-
-            }
-
             return false;
 
         });
 
+        if (clicked) {
 
-
-        if (found) {
-
-            console.log(`[${pid}] ✅ Đã JS Click vào Avatar chính (Cái to nhất)!`);
-
-            await randomDelay(2000, 3000);
+            console.log(`[${pid}] ✅ Đã JS Click vào Avatar!`);
 
             return;
 
-        } else {
-
-            console.warn(`[${pid}] [!] Không tìm thấy Avatar nào đủ to.`);
-
         }
 
+    } catch (e) {}
 
+    console.warn(`[${pid}] [!] Không tìm thấy. Thử Click tọa độ ảo...`);
 
-    } catch (e) {
+    // Nếu JS fail, click vào giữa màn hình (nơi thường là cover photo/avatar)
 
-        console.error(`[${pid}] [!] Lỗi Magic Avatar:`, e);
-
-    }
-
-
-
-    // FALLBACK: TỌA ĐỘ CỨNG (Nếu JS thất bại)
-
-    // Lưu ý: Tọa độ này chỉ đúng nếu Viewport là 1280x800
-
-    // Nếu cửa sổ bị bóp méo, tọa độ này có thể sai. Nhưng JS trên kia đã bao sân rồi.
-
-    const hardX = 170;
-
-    const hardY = 370; 
-
-    console.log(`[${pid}] 🔨 Dùng búa tạ: X=${hardX}, Y=${hardY}`);
-
-    await page.mouse.click(hardX, hardY);
+    await page.mouse.click(640, 300); 
 
 }
 
@@ -360,8 +304,39 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-             // Zoom nhỏ lại để đảm bảo Avatar luôn hiện (Anti-responsive)
-             await page.evaluate(() => { document.body.style.zoom = '0.8'; });
+             
+
+             // === LOGIC ZOOM THÔNG MINH ===
+
+             // Lấy chiều rộng cửa sổ hiện tại
+
+             const view = page.viewport();
+
+             
+
+             if (view && view.width < 400) {
+
+                 // Nếu cửa sổ bé như lỗ mũi (chạy 20-30 luồng)
+
+                 // Zoom xuống 25% để Facebook tưởng màn hình vẫn to
+
+                 console.log(`[${pid}] 🔍 Window cực nhỏ. Zoom 25%`);
+
+                 await page.evaluate(() => { document.body.style.zoom = '0.25'; });
+
+             } 
+
+             else if (view && view.width < 800) {
+
+                 // Nếu cửa sổ vừa vừa
+
+                 console.log(`[${pid}] 🔍 Window vừa. Zoom 60%`);
+
+                 await page.evaluate(() => { document.body.style.zoom = '0.6'; });
+
+             }
+
+             
 
              await randomDelay(2000, 4000);
 
@@ -509,22 +484,28 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       }
 
-      // === XỬ LÝ VỊ TRÍ VÀ KÍCH THƯỚC CỬA SỔ ===
+      // LẤY KÍCH THƯỚC CỬA SỔ BÉ TÍ TỪ CONTROLLER (ĐỂ XẾP GRID)
       const winX = options.windowPosition?.x || 0;
       const winY = options.windowPosition?.y || 0;
-      // Nếu không có size truyền vào thì dùng 1280x800
-      const winW = options.windowSize?.width || 1280; 
-      const winH = options.windowSize?.height || 800;
+      const winW = options.windowSize?.width || 1000;
+      const winH = options.windowSize?.height || 700;
 
       const args = [
 
         '--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
 
-        // --- QUAN TRỌNG: SET VỊ TRÍ VÀ KÍCH THƯỚC CỬA SỔ ---
+        
+
+        // Cửa sổ bên ngoài thì bé (để xếp gạch)
+
         `--window-position=${winX},${winY}`,
+
         `--window-size=${winW},${winH}`,
-        // ----------------------------------------------------
-        '--force-device-scale-factor=0.8', // Thu nhỏ tỉ lệ hiển thị xuống 80%
+
+        
+
+        '--force-device-scale-factor=0.7', // Thu nhỏ tỉ lệ UI lại chút cho dễ nhìn
+
         '--ignore-certificate-errors',
 
         '--disable-blink-features=AutomationControlled',
@@ -533,15 +514,13 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
         '--password-store=basic',
 
-        // === CỜ CHỐNG NGỦ ĐÔNG & AUTO PLAY ===
-
         '--disable-background-timer-throttling',
 
         '--disable-backgrounding-occluded-windows',
 
         '--disable-renderer-backgrounding',
 
-        '--autoplay-policy=no-user-gesture-required', // Ép video tự chạy
+        '--autoplay-policy=no-user-gesture-required',
 
         '--disable-features=CalculateNativeWinOcclusion'
 
@@ -579,7 +558,9 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       await page.bringToFront();
 
-      // ÉP CỨNG VIEWPORT
+      // === QUAN TRỌNG NHẤT: ÉP MÀN HÌNH BÊN TRONG PHẢI TO ===
+      // Dù cửa sổ bé, nhưng "mắt" của Bot vẫn nhìn thấy giao diện rộng 1280px
+      // Điều này giúp Avatar luôn nằm đúng vị trí chuẩn
       await page.setViewport({ width: 1280, height: 800 });
 
 
