@@ -44,6 +44,10 @@ secrets/
 *.log
 npm-debug.log*
 
+# Error screenshots
+error_2fa_*.png
+error_*.png
+
 # OS
 .DS_Store
 Thumbs.db

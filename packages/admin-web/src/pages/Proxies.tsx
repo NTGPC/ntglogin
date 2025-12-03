@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, Proxy, ProxyCheckResult } from '@/lib/api'
+import { api, Proxy } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -48,7 +48,7 @@ export default function Proxies() {
   const [currentPage, setCurrentPage] = useState(1)
   const [feedback, setFeedback] = useState<null | { type: 'success' | 'error'; message: string }>(null)
   const [proxyString, setProxyString] = useState('')
-  const [liveStatusById, setLiveStatusById] = useState<Record<number, ProxyCheckResult>>({})
+  const [loadingIds, setLoadingIds] = useState<number[]>([])
   const itemsPerPage = 10
 
   const {
@@ -134,8 +134,8 @@ export default function Proxies() {
         setFeedback({ type: 'success', message: 'Proxy created successfully. Checking live…' })
         // Auto check liveness after create
         try {
-          const result = await api.checkProxy(created.id)
-          setLiveStatusById((m) => ({ ...m, [created.id]: result }))
+          const updatedProxy = await api.checkProxy(created.id)
+          setProxies(prev => prev.map(p => p.id === created.id ? updatedProxy : p))
         } catch {}
       }
       setDialogOpen(false)
@@ -161,15 +161,41 @@ export default function Proxies() {
       setTimeout(() => setFeedback(null), 5000)
     }
   }
-  const checkOne = async (id: number) => {
-    setLiveStatusById((m) => ({ ...m, [id]: { ...(m[id] || {}), error: undefined } as any }))
-    try {
-      const result = await api.checkProxy(id)
-      setLiveStatusById((m) => ({ ...m, [id]: result }))
-    } catch (e: any) {
-      setLiveStatusById((m) => ({ ...m, [id]: { live: false, latencyMs: null, error: e?.message || 'Check failed' } }))
+  // Hàm render trạng thái (Hiển thị dựa trên DB)
+  const renderStatus = (status?: string) => {
+    if (status === 'live') {
+      return <span className="px-2 py-1 rounded bg-green-100 text-green-800 font-bold dark:bg-green-900 dark:text-green-200">Live 🟢</span>;
     }
-  }
+    if (status === 'die') {
+      return <span className="px-2 py-1 rounded bg-red-100 text-red-800 font-bold dark:bg-red-900 dark:text-red-200">Not Live 🔴</span>;
+    }
+    if (status === 'checking') {
+      return <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">Checking... ⏳</span>;
+    }
+    return <span className="text-gray-400">-</span>;
+  };
+
+  // Hàm xử lý nút Check
+  const handleCheckProxy = async (id: number) => {
+    // Cập nhật tạm UI sang 'checking'
+    setProxies(prev => prev.map(p => p.id === id ? { ...p, status: 'checking' } : p));
+    setLoadingIds(prev => [...prev, id]);
+
+    try {
+      // Gọi API check (Server sẽ check và lưu DB)
+      const res = await api.checkProxy(id);
+      
+      // Server trả về proxy với status mới (Live/Die) -> Cập nhật vào List
+      const updatedProxy = res;
+      setProxies(prev => prev.map(p => p.id === id ? updatedProxy : p));
+    } catch (error) {
+      console.error("Check failed", error);
+      // Nếu lỗi mạng thì trả về status cũ hoặc die
+      setProxies(prev => prev.map(p => p.id === id ? { ...p, status: 'die' } : p));
+    } finally {
+      setLoadingIds(prev => prev.filter(pid => pid !== id));
+    }
+  };
 
 
   const handleDelete = async (id: number) => {
@@ -306,24 +332,7 @@ export default function Proxies() {
                   <TableCell>{proxy.type}</TableCell>
                   <TableCell>{proxy.username || '-'}</TableCell>
                   <TableCell>
-                    {liveStatusById[proxy.id] ? (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                          liveStatusById[proxy.id].live
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                        }`}
-                        title={
-                          liveStatusById[proxy.id].latencyMs
-                            ? `${liveStatusById[proxy.id].latencyMs} ms`
-                            : (liveStatusById[proxy.id].error || '')
-                        }
-                      >
-                        {liveStatusById[proxy.id].live ? 'Live' : 'Not Live'}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
+                    {renderStatus(proxy.status)}
                   </TableCell>
                   <TableCell>
                     {new Date(proxy.created_at).toLocaleDateString()}
@@ -343,10 +352,15 @@ export default function Proxies() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => checkOne(proxy.id)}
+                        onClick={() => handleCheckProxy(proxy.id)}
                         title="Check live"
+                        disabled={loadingIds.includes(proxy.id)}
                       >
-                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        {loadingIds.includes(proxy.id) ? (
+                          <span className="animate-spin">⏳</span>
+                        ) : (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        )}
                       </Button>
                       <Button
                         variant="ghost"

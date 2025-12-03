@@ -83,6 +83,8 @@ export interface Proxy {
   password?: string
   type: string
   active: boolean
+  status?: string // 'live', 'die', 'checking', 'unknown'
+  lastChecked?: string
   created_at: string
 }
 
@@ -238,9 +240,9 @@ export const api = {
     await apiClient.delete(`/api/proxies/${id}`)
   },
 
-  async checkProxy(id: number): Promise<ProxyCheckResult> {
+  async checkProxy(id: number): Promise<Proxy> {
     const response = await apiClient.post(`/api/proxies/${id}/check`)
-    return response.data.data || response.data
+    return response.data
   },
 
   // Profiles helpers (new)

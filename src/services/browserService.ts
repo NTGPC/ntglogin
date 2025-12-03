@@ -8,7 +8,7 @@ import path from 'path';
 
 import fs from 'fs';
 
-import { authenticator } from 'otplib';
+import * as OTPAuth from 'otpauth';
 
 
 
@@ -76,17 +76,35 @@ function replaceVariables(text: string, profile: any): string {
 
   if (result.includes('{{2fa}}')) {
 
-    const secret = account.twoFactor || account.secretKey;
+    const secret = account.twoFactor || account.secretKey || account.twoFactorCode;
 
     if (secret) {
 
       try {
 
-        const token = authenticator.generate(secret.replace(/\s/g, ''));
+        const cleanSecret = secret.replace(/\s+/g, '');
+
+        const totp = new OTPAuth.TOTP({
+
+          secret: OTPAuth.Secret.fromBase32(cleanSecret),
+
+          algorithm: 'SHA1',
+
+          digits: 6,
+
+          period: 30
+
+        });
+
+        const token = totp.generate();
 
         result = result.replace(/\{\{2fa\}\}/g, token);
 
-      } catch (err) {}
+      } catch (err) {
+
+        console.error("Lỗi khi generate 2FA token:", err);
+
+      }
 
     }
 
@@ -105,7 +123,8 @@ async function clickMagicAvatar(page: Page, pid: any) {
         await page.waitForSelector('image[preserveAspectRatio^="xMidYMid"]', { timeout: 10000 });
         const clicked = await page.evaluate(() => {
             const images = document.querySelectorAll('image[preserveAspectRatio^="xMidYMid"]');
-            for (const img of images) {
+            for (let i = 0; i < images.length; i++) {
+                const img = images[i];
                 const rect = img.getBoundingClientRect();
                 if (rect.width > 80) { 
                     const btn = img.closest('div[role="button"]') || img.parentElement;
@@ -128,280 +147,289 @@ async function clickMagicAvatar(page: Page, pid: any) {
 
 
 
-async function handleSmart2FA(page: Page, code2FA: string) {
-    console.log(`>>> [SMART 2FA] Bắt đầu chiến 2FA. Mã: ${code2FA}`);
+// Hàm helper để chờ và click an toàn với delay
+async function safeClick(page: Page, selector: string, timeout: number = 5000): Promise<boolean> {
+  try {
+    await page.waitForSelector(selector, { visible: true, timeout });
+    await page.click(selector);
+    // QUAN TRỌNG: Chờ 1 chút sau khi click để UI kịp phản hồi
+    await new Promise(r => setTimeout(r, 1000));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Export để có thể dùng ở nơi khác nếu cần
+export { safeClick };
+
+// --- HÀM CLICK BẤT TỬ (CẤP ĐỘ CAO NHẤT) ---
+// Hàm này chấp nhận lỗi sập context, sập protocol, sập mạng -> Vẫn thử lại đến khi click được
+async function godModeClick(page: Page, ariaName: string, timeout: number = 5000): Promise<boolean> {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+        try {
+            // 1. Dùng ARIA Selector (Chuẩn nhất của Chrome)
+            // Nó tìm theo cái tên mà người mù nghe được (VD: "Try another way")
+            const selector = `aria/${ariaName}`;
+            
+            // 2. Chờ nút hiện ra
+            const el = await page.waitForSelector(selector, { timeout: 1000 });
+            if (el) {
+                // 3. Click
+                await el.click();
+                console.log(`[GOD MODE] ✅ Đã click trúng: "${ariaName}"`);
+                return true;
+            }
+        } catch (error: any) {
+            // BỎ QUA MỌI LỖI - KHÔNG ĐƯỢC DỪNG
+            // Lỗi refresh trang, lỗi chưa load xong... kệ nó, lặp lại ngay
+        }
+        // Nghỉ 500ms trước khi thử lại
+        await new Promise(r => setTimeout(r, 500));
+    }
+    console.log(`[GOD MODE] ❌ Hết giờ tìm: "${ariaName}"`);
+    return false;
+}
+
+// --- LOGIC 2FA CHÍNH ---
+async function handleSmart2FA(page: Page, profile: any) {
+    console.log("🔥 KÍCH HOẠT CHẾ ĐỘ 2FA GOD MODE 🔥");
+    if (page.isClosed()) return;
     
-    if (!code2FA) {
-        console.error(">>> [LỖI] Không có mã 2FA.");
+    // Lấy Secret Key
+    let secretKey = '';
+    try {
+        let account: any = {};
+        if (profile.accountInfo) {
+            account = typeof profile.accountInfo === 'string' ? JSON.parse(profile.accountInfo) : profile.accountInfo;
+        }
+        secretKey = account.twoFactor || account.secretKey || account.twoFactorCode || profile.twoFactorCode || '';
+    } catch (e) {}
+    
+    if (!secretKey) {
+        console.error("LỖI: Không có Secret Key!");
         return;
     }
 
-    try {
-        const tryBtn = await (page as any).$x("//div[contains(text(), 'Try another way')] | //span[contains(text(), 'Try another way')]");
-        if (tryBtn.length > 0) {
-            console.log("   -> Đã bấm 'Try another way'.");
-            
-            await Promise.all([
-                tryBtn[0].click(),
-                page.waitForNavigation({ timeout: 3000, waitUntil: 'networkidle2' }).catch(() => {})
-            ]);
-            
-            await randomDelay(2000, 3000);
+    // --- GIAI ĐOẠN 1: TÌM NÚT "Try another way" ---
+    // Vì trang refresh liên tục, ta lặp vô tận cho đến khi qua được bước này
+    let passedStep1 = false;
+    for (let i = 0; i < 20; i++) { // Thử tối đa 20 lần (khoảng 20 giây)
+        // Thử tìm nút Try another way
+        if (await godModeClick(page, "Try another way", 2000)) {
+            passedStep1 = true;
+            break;
         }
-    } catch (e) {
-        console.log("   -> [INFO] Không bấm được 'Try another way' (Có thể đã qua bước này).");
-    }
-
-    try {
-        const authOption = await page.evaluate(() => {
-            const elements = Array.from(document.querySelectorAll('span, div, label'));
-            for (const el of elements) {
-                if (el.textContent && (el.textContent.includes('Authentication app') || el.textContent.includes('Ứng dụng xác thực'))) {
-                    (el as HTMLElement).click();
-                    return true;
-                }
-            }
-            return false;
-        });
-
-        if (authOption) {
-            console.log("   -> Đã chọn 'Authentication app'.");
-            await randomDelay(1000, 2000);
-
-            await page.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('span, button, div[role="button"]'));
-                for (const b of btns) {
-                    if (b.textContent === 'Continue' || b.textContent === 'Tiếp tục') {
-                        (b as HTMLElement).click();
-                        return true;
-                    }
-                }
-            });
-            
-            await new Promise(r => setTimeout(r, 3000));
+        
+        // Nếu không thấy, có thể nó tên là "Thử cách khác"
+        if (await godModeClick(page, "Thử cách khác", 1000)) {
+            passedStep1 = true;
+            break;
         }
-    } catch (e) {
-        console.log("   -> [INFO] Lỗi chọn Auth App (Có thể đã hiện ô nhập luôn).");
-    }
-
-    const selectors = [
-        'input[name="approvals_code"]',
-        'input[type="text"][autocomplete="one-time-code"]',
-        'input[aria-label="Code"]',
-        'input[placeholder="Code"]',
-        'input[type="text"]'
-    ];
-
-    let typed = false;
-    for (let i = 0; i < 10; i++) {
-        if (page.isClosed()) break;
-
-        for (const sel of selectors) {
-            try {
-                const el = await page.$(sel);
-                if (el) {
-                    console.log(`   -> Tìm thấy ô nhập: ${sel}`);
-                    await el.click();
-                    await page.type(sel, code2FA, { delay: 100 });
-                    typed = true;
-                    break;
-                }
-            } catch(e) {}
-        }
-        if (typed) break;
-        await new Promise(r => setTimeout(r, 1000));
-    }
-
-    if (!typed) {
-        console.log("   -> Gõ mù (Blind Type)...");
+        
+        // Nếu vẫn không thấy, kiểm tra xem có phải đã ở màn hình chọn App chưa?
+        // Check thử nút "Authentication app"
         try {
-            await page.keyboard.press('Tab');
-            await page.keyboard.type(code2FA, { delay: 100 });
+            const isAtStep2 = await page.$(`aria/Authentication app`) || await page.$(`aria/Ứng dụng xác thực`);
+            if (isAtStep2) {
+                console.log("--> Đang ở bước 2 luôn rồi, bỏ qua bước 1.");
+                passedStep1 = true;
+                break;
+            }
         } catch(e) {}
     }
-
+    
+    // Chờ popup bung ra (quan trọng)
+    await new Promise(r => setTimeout(r, 2000));
+    
+    // --- GIAI ĐOẠN 2: CHỌN "Authentication app" ---
+    console.log("--> Đang chọn App...");
+    let passedStep2 = false;
+    
+    // Thử click vào App
+    if (await godModeClick(page, "Authentication app", 5000)) passedStep2 = true;
+    else if (await godModeClick(page, "Ứng dụng xác thực", 5000)) passedStep2 = true;
+    
+    // Mẹo: Đôi khi click vào chữ không ăn, phải click vào cái radio button
+    if (!passedStep2) {
+         try {
+             // Tìm tất cả radio button và click cái thứ 2 (thường là App)
+             const radios = await page.$$('input[type="radio"]');
+             if (radios.length > 1) {
+                 await radios[1].click();
+                 console.log("--> Đã click Radio Button thứ 2");
+                 passedStep2 = true;
+             }
+         } catch(e) {}
+    }
+    
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // --- GIAI ĐOẠN 3: BẤM "Continue" ---
+    console.log("--> Bấm Continue...");
+    await godModeClick(page, "Continue", 5000);
+    await godModeClick(page, "Tiếp tục", 2000);
+    
+    // --- GIAI ĐOẠN 4: NHẬP MÃ ---
+    console.log("--> Tìm ô nhập mã...");
+    const inputSelector = 'input[type="text"], input[type="number"], input[aria-label="Code"], input[data-wrapper-for="code_input"]';
+    
     try {
-        await page.keyboard.press('Enter');
-        await randomDelay(1000, 2000);
+        // Chờ ô input xuất hiện (Lâu hơn chút vì mạng lag)
+        await page.waitForSelector(inputSelector, { visible: true, timeout: 15000 });
         
-        await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button, span'));
-            for (const b of btns) {
-                if (['Continue', 'Tiếp tục', 'Submit', 'Gửi mã'].includes(b.textContent?.trim() || '')) {
-                    (b as HTMLElement).click();
-                    return true;
-                }
-            }
+        // Tính mã
+        const secret = secretKey.replace(/\s+/g, '');
+        const totp = new OTPAuth.TOTP({
+            secret: OTPAuth.Secret.fromBase32(secret),
+            algorithm: 'SHA1',
+            digits: 6,
+            period: 30
         });
-    } catch(e) {}
+        const token = totp.generate();
+        console.log(`--> Mã 2FA: ${token}`);
+        
+        // Nhập mã
+        await page.click(inputSelector);
+        await new Promise(r => setTimeout(r, 500));
+        await page.type(inputSelector, token, { delay: 100 });
+        await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.press('Enter');
+        
+        console.log("--> ĐÃ NHẬP XONG. ĐANG LOGIN...");
+        
+        // Chờ điều hướng
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+    } catch (e) {
+        console.log("Lỗi nhập mã (Có thể đã login thành công):", e);
+    }
 }
 
 
 
-async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
-
-  console.log(`>>> [WORKFLOW] Start: ${profile.name || profile.id}`);
-
-  
-
-  if (!workflow || !workflow.data) return;
-
-
-
-  let nodes: any[] = [];
-
-  let edges: any[] = [];
-
-  try {
-
-    const wd = workflow.data;
-
-    nodes = typeof wd.nodes === 'string' ? JSON.parse(wd.nodes) : wd.nodes;
-
-    edges = typeof wd.edges === 'string' ? JSON.parse(wd.edges) : wd.edges;
-
-  } catch (e) { return; }
-
-
-
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-
-  const edgeMap = new Map(edges.map(e => [e.source, e.target]));
-
-  
-
-  let code2FA = "";
-
-  try {
-
-      let acc: any = {};
-
-      if (profile.accountInfo) acc = JSON.parse(profile.accountInfo);
-
-      if (acc.twoFactor) code2FA = authenticator.generate(acc.twoFactor.replace(/\s/g, ''));
-
-  } catch(e){}
-
-
-
-  let currentId = nodes.find(n => ['start', 'startnode'].includes(n.type?.toLowerCase()))?.id;
-
-  if (!currentId && nodes.length > 0) currentId = nodes[0].id;
-
-
-
-  let step = 0;
-
-  while (currentId && step < 100) {
-
-    step++;
-
-    const node = nodeMap.get(currentId);
-
-    if (!node) break;
-
-
-
-    let type = node.type?.toLowerCase().replace(/\s/g, '');
-
-    const config = node.data?.config || node.data || {};
-
-
-
-    console.log(`>>> [STEP ${step}] Node: ${node.type}`);
-
-
-
-    try {
-
-      if (type === 'openpage' || type === 'openurl') {
-
-         const url = config.url || config.value;
-
-         if (url) {
-
-             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-             
-
-             await randomDelay(2000, 4000);
-
-         }
-
-      } 
-
-      else if (type === 'click' || type === 'clicknode') {
-
-         let sel = config.selector || config.target;
-
-         if (sel) {
-
-             try {
-
-                await page.waitForSelector(sel, { timeout: 5000 });
-
-                await page.click(sel);
-
-             } catch(e) {
-
-                 if (!sel.includes('submit')) console.warn("Click miss:", e);
-
-             }
-
-         }
-
-      } 
-
-      else if (type === 'type' || type === 'typetext' || type === 'input') {
-
-         const sel = config.selector || config.target;
-
-         const txt = config.text || config.value;
-
-         
-
-         if (sel && txt) {
-
-           if (txt.includes('{{2fa}}')) {
-
-               console.log("      -> Phát hiện bước 2FA. Gọi hàm xử lý...");
-
-               await handleSmart2FA(page, code2FA);
-
-           } 
-
-           else {
-
-               const finalTxt = replaceVariables(txt, profile);
-
-               await page.waitForSelector(sel, { timeout: 10000 });
-
-               await page.type(sel, finalTxt, { delay: 100 });
-
-           }
-
-         }
-
-      } 
-
-      else if (type === 'wait') {
-
-         const ms = Number(config.milliseconds || 1000);
-
-         await new Promise(r => setTimeout(r, ms));
-
-      }
-
-    } catch (e) { console.warn(`[!] Node Error:`, e); }
-
+// --- HÀM CLICK THÔNG MINH CHO WORKFLOW (Kết hợp Drill + GodMode) ---
+async function workflowSmartClick(page: Page, selectorOrText: string): Promise<boolean> {
+    console.log(`[WORKFLOW CLICK] Đang xử lý: ${selectorOrText}`);
     
+    // TRƯỜNG HỢP 1: Nếu là lệnh tìm theo Text (Cú pháp mới: "TEXT:::View story")
+    if (selectorOrText.startsWith('TEXT:::') || selectorOrText.includes('View story') || selectorOrText.includes('Xem tin')) {
+        const textToFind = selectorOrText.replace('TEXT:::', '').replace('force://', ''); // Làm sạch
+        
+        // Tách các từ khóa nếu có dấu | (Ví dụ: "View story|Xem tin")
+        const keywords = textToFind.split('|').map(k => k.trim());
+        
+        for (const kw of keywords) {
+            // Dùng lại hàm godModeClick thần thánh ở trên
+            if (await godModeClick(page, kw, 3000)) return true; 
+        }
+        return false;
+    }
+    
+    // TRƯỜNG HỢP 2: Selector thông thường (XPath hoặc CSS)
+    try {
+        let cleanSelector = selectorOrText.replace('force://', '');
+        
+        // Nếu là XPath
+        if (cleanSelector.startsWith('//') || cleanSelector.startsWith('xpath/')) {
+            const el = await (page as any).waitForXPath(cleanSelector, { visible: true, timeout: 5000 });
+            if (el) { await el.click(); return true; }
+        } 
+        // Nếu là CSS
+        else {
+            const el = await page.waitForSelector(cleanSelector, { visible: true, timeout: 5000 });
+            if (el) { await el.click(); return true; }
+        }
+    } catch (e) {
+        console.warn(`[CLICK FAIL] Không bấm được theo selector: ${selectorOrText}`);
+    }
+    return false;
+}
 
+// --- HÀM THỰC THI WORKFLOW CHÍNH ---
+async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
+  console.log(`>>> [WORKFLOW] Start: ${profile.name || profile.id}`);
+  
+  if (!workflow || !workflow.data) return;
+  
+  let nodes: any[] = [];
+  let edges: any[] = [];
+  try {
+    const wd = workflow.data;
+    nodes = typeof wd.nodes === 'string' ? JSON.parse(wd.nodes) : wd.nodes;
+    edges = typeof wd.edges === 'string' ? JSON.parse(wd.edges) : wd.edges;
+  } catch (e) { return; }
+  
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const edgeMap = new Map(edges.map(e => [e.source, e.target]));
+  
+  let currentId = nodes.find(n => ['start', 'startnode'].includes(n.type?.toLowerCase()))?.id;
+  if (!currentId && nodes.length > 0) currentId = nodes[0].id;
+  
+  let step = 0;
+  while (currentId && step < 100) {
+    step++;
+    const node = nodeMap.get(currentId);
+    if (!node) break;
+    
+    const type = node.type?.toLowerCase().replace(/\s/g, '');
+    const config = node.data?.config || node.data || {};
+    
+    console.log(`>>> [STEP ${step}] Node: ${node.type} (${node.id})`);
+    
+    try {
+      // --- XỬ LÝ LOẠI CLICK ---
+      if (type === 'click' || type === 'clicknode') {
+         let sel = config.selector || config.target;
+         if (sel) {
+             // 1. Xử lý Magic Avatar (Giữ nguyên)
+             if (sel === 'MAGIC_AVATAR') {
+                await clickMagicAvatar(page, profile.id);
+             } 
+             // 2. Xử lý Click thông thường & Text
+             else {
+                // Thay thế biến {{username}} nếu có
+                sel = replaceVariables(sel, profile);
+                await workflowSmartClick(page, sel);
+             }
+         }
+      } 
+      // --- XỬ LÝ WAIT ---
+      else if (type === 'wait') {
+         const ms = Number(config.milliseconds || 2000);
+         console.log(`   -> Waiting ${ms}ms...`);
+         await new Promise(r => setTimeout(r, ms));
+      }
+      // --- CÁC LOẠI KHÁC (Type, OpenPage...) giữ nguyên ---
+      else if (type === 'openpage' || type === 'openurl') {
+         const url = config.url || config.value;
+         if (url) {
+             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+             await randomDelay(2000, 4000);
+         }
+      }
+      else if (type === 'type' || type === 'typetext' || type === 'input') {
+         const sel = config.selector || config.target;
+         const txt = config.text || config.value;
+         
+         if (sel && txt) {
+           if (txt.includes('{{2fa}}')) {
+               console.log("      -> Phát hiện bước 2FA. Gọi hàm xử lý...");
+               await handleSmart2FA(page, profile);
+           } 
+           else {
+               const finalTxt = replaceVariables(txt, profile);
+               await page.waitForSelector(sel, { timeout: 10000 });
+               await page.type(sel, finalTxt, { delay: 100 });
+           }
+         }
+      }
+    } catch (e) { console.warn(`[!] Node Error:`, e); }
+    
     currentId = edgeMap.get(currentId);
-
   }
-
+  
   console.log(">>> [WORKFLOW] Done.");
-
 }
 
 
@@ -439,6 +467,9 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
 
 
+      // SlowMo mode để debug (bật bằng env variable DEBUG_SLOWMO=50)
+      const slowMo = process.env.DEBUG_SLOWMO ? parseInt(process.env.DEBUG_SLOWMO) : undefined;
+
       const browser = await puppeteer.launch({
 
         headless: false,
@@ -451,7 +482,9 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
         defaultViewport: null,
 
-        ignoreDefaultArgs: ['--enable-automation']
+        ignoreDefaultArgs: ['--enable-automation'],
+
+        ...(slowMo ? { slowMo } : {}) // Chỉ thêm slowMo nếu được bật
 
       });
 
@@ -470,10 +503,10 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
       if (profile.screenWidth) await page.setViewport({ width: profile.screenWidth, height: profile.screenHeight });
 
       await page.evaluateOnNewDocument(() => {
-        const newProto = navigator.__proto__;
+        const newProto = (navigator as any).__proto__;
         delete newProto.webdriver;
         // @ts-ignore
-        navigator.__proto__ = newProto;
+        (navigator as any).__proto__ = newProto;
       });
 
 
