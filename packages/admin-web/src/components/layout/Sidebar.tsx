@@ -11,6 +11,7 @@ import {
   Menu,
   X,
   Workflow,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
@@ -25,6 +26,7 @@ const menuItems = [
   { path: '/jobs', label: 'Jobs', icon: Briefcase },
   { path: '/executions', label: 'Executions', icon: Play },
   { path: '/workflows', label: 'Workflows', icon: Workflow },
+  { path: '/2fa', label: 'Giải 2FA', icon: ShieldCheck },
 ]
 
 export function Sidebar() {

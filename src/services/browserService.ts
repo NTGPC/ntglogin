@@ -98,131 +98,149 @@ function replaceVariables(text: string, profile: any): string {
 
 
 
-// === MAGIC CLICK: TÌM BẰNG MỌI GIÁ (Hỗ trợ cửa sổ nhỏ) ===
-
 async function clickMagicAvatar(page: Page, pid: any) {
-
-    console.log(`[${pid}] 🧙‍♂️ Magic Avatar: Quét tìm ảnh...`);
-
+    console.log(`[${pid}] 🧙‍♂️ Magic Avatar: Đang tìm...`);
     
-
     try {
-
-        // Tìm cái thẻ ảnh (image) có thuộc tính đặc biệt
-
-        await page.waitForSelector('image[preserveAspectRatio^="xMidYMid"]', { timeout: 5000 });
-
+        await page.waitForSelector('image[preserveAspectRatio^="xMidYMid"]', { timeout: 10000 });
         const clicked = await page.evaluate(() => {
-
-            // Lấy tất cả ảnh Avatar trên màn hình
-
             const images = document.querySelectorAll('image[preserveAspectRatio^="xMidYMid"]');
-
-            
-
             for (const img of images) {
-
-                // Kiểm tra kích thước (Lọc bỏ icon nhỏ)
-
                 const rect = img.getBoundingClientRect();
-
-                if (rect.width > 80) { // Avatar profile luôn > 80px
-
-                    // Tìm cái nút cha của nó để click
-
+                if (rect.width > 80) { 
                     const btn = img.closest('div[role="button"]') || img.parentElement;
-
                     if (btn) {
-
-                        (btn as HTMLElement).click(); // JS CLICK
-
+                        (btn as HTMLElement).click();
                         return true;
-
                     }
-
                 }
-
             }
-
             return false;
-
         });
-
         if (clicked) {
-
-            console.log(`[${pid}] ✅ Đã JS Click vào Avatar!`);
-
+            console.log(`[${pid}] ✅ Đã Click Avatar!`);
             return;
-
         }
-
     } catch (e) {}
-
-    console.warn(`[${pid}] [!] Không tìm thấy. Thử Click tọa độ ảo...`);
-
-    // Nếu JS fail, click vào giữa màn hình (nơi thường là cover photo/avatar)
-
-    await page.mouse.click(640, 300); 
-
+    console.warn(`[${pid}] [!] Không tìm thấy. Thử Click tọa độ...`);
+    await page.mouse.click(170, 370);
 }
 
 
 
 async function handleSmart2FA(page: Page, code2FA: string) {
+    console.log(`>>> [SMART 2FA] Bắt đầu chiến 2FA. Mã: ${code2FA}`);
+    
+    if (!code2FA) {
+        console.error(">>> [LỖI] Không có mã 2FA.");
+        return;
+    }
 
     try {
-
-        const tryAnotherWayBtn = await (page as any).$x("//div[contains(text(), 'Try another way')]");
-
-        if (tryAnotherWayBtn.length > 0) {
-
-            await tryAnotherWayBtn[0].click();
-
+        const tryBtn = await (page as any).$x("//div[contains(text(), 'Try another way')] | //span[contains(text(), 'Try another way')]");
+        if (tryBtn.length > 0) {
+            console.log("   -> Đã bấm 'Try another way'.");
+            
+            await Promise.all([
+                tryBtn[0].click(),
+                page.waitForNavigation({ timeout: 3000, waitUntil: 'networkidle2' }).catch(() => {})
+            ]);
+            
             await randomDelay(2000, 3000);
-
-            const authAppOption = await (page as any).$x("//div[contains(text(), 'Authentication app')]");
-
-            if (authAppOption.length > 0) {
-
-                await authAppOption[0].click();
-
-                await randomDelay(1000, 2000);
-
-                const continueBtn = await (page as any).$x("//span[contains(text(), 'Continue')]");
-
-                if (continueBtn.length > 0) await continueBtn[0].click();
-
-            }
-
         }
+    } catch (e) {
+        console.log("   -> [INFO] Không bấm được 'Try another way' (Có thể đã qua bước này).");
+    }
 
-        const inputSelector = 'input[type="text"], input[name="approvals_code"]';
+    try {
+        const authOption = await page.evaluate(() => {
+            const elements = Array.from(document.querySelectorAll('span, div, label'));
+            for (const el of elements) {
+                if (el.textContent && (el.textContent.includes('Authentication app') || el.textContent.includes('Ứng dụng xác thực'))) {
+                    (el as HTMLElement).click();
+                    return true;
+                }
+            }
+            return false;
+        });
 
+        if (authOption) {
+            console.log("   -> Đã chọn 'Authentication app'.");
+            await randomDelay(1000, 2000);
+
+            await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('span, button, div[role="button"]'));
+                for (const b of btns) {
+                    if (b.textContent === 'Continue' || b.textContent === 'Tiếp tục') {
+                        (b as HTMLElement).click();
+                        return true;
+                    }
+                }
+            });
+            
+            await new Promise(r => setTimeout(r, 3000));
+        }
+    } catch (e) {
+        console.log("   -> [INFO] Lỗi chọn Auth App (Có thể đã hiện ô nhập luôn).");
+    }
+
+    const selectors = [
+        'input[name="approvals_code"]',
+        'input[type="text"][autocomplete="one-time-code"]',
+        'input[aria-label="Code"]',
+        'input[placeholder="Code"]',
+        'input[type="text"]'
+    ];
+
+    let typed = false;
+    for (let i = 0; i < 10; i++) {
+        if (page.isClosed()) break;
+
+        for (const sel of selectors) {
+            try {
+                const el = await page.$(sel);
+                if (el) {
+                    console.log(`   -> Tìm thấy ô nhập: ${sel}`);
+                    await el.click();
+                    await page.type(sel, code2FA, { delay: 100 });
+                    typed = true;
+                    break;
+                }
+            } catch(e) {}
+        }
+        if (typed) break;
+        await new Promise(r => setTimeout(r, 1000));
+    }
+
+    if (!typed) {
+        console.log("   -> Gõ mù (Blind Type)...");
         try {
+            await page.keyboard.press('Tab');
+            await page.keyboard.type(code2FA, { delay: 100 });
+        } catch(e) {}
+    }
 
-            await page.waitForSelector(inputSelector, { timeout: 5000 });
-
-            await page.type(inputSelector, code2FA, { delay: 100 });
-
-            await page.keyboard.press('Enter');
-
-            const submitBtn = await page.$('button[type="submit"], button[value="Continue"]');
-
-            if (submitBtn) await submitBtn.click();
-
-        } catch (e) {}
-
-    } catch (error) {}
-
+    try {
+        await page.keyboard.press('Enter');
+        await randomDelay(1000, 2000);
+        
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, span'));
+            for (const b of btns) {
+                if (['Continue', 'Tiếp tục', 'Submit', 'Gửi mã'].includes(b.textContent?.trim() || '')) {
+                    (b as HTMLElement).click();
+                    return true;
+                }
+            }
+        });
+    } catch(e) {}
 }
 
 
 
 async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
-  const pid = profile.id;
-
-  console.log(`[${pid}] WORKFLOW START`);
+  console.log(`>>> [WORKFLOW] Start: ${profile.name || profile.id}`);
 
   
 
@@ -290,7 +308,7 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
 
 
-    console.log(`[${pid}] STEP ${step}: ${node.type}`);
+    console.log(`>>> [STEP ${step}] Node: ${node.type}`);
 
 
 
@@ -306,38 +324,6 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
              
 
-             // === LOGIC ZOOM THÔNG MINH ===
-
-             // Lấy chiều rộng cửa sổ hiện tại
-
-             const view = page.viewport();
-
-             
-
-             if (view && view.width < 400) {
-
-                 // Nếu cửa sổ bé như lỗ mũi (chạy 20-30 luồng)
-
-                 // Zoom xuống 25% để Facebook tưởng màn hình vẫn to
-
-                 console.log(`[${pid}] 🔍 Window cực nhỏ. Zoom 25%`);
-
-                 await page.evaluate(() => { document.body.style.zoom = '0.25'; });
-
-             } 
-
-             else if (view && view.width < 800) {
-
-                 // Nếu cửa sổ vừa vừa
-
-                 console.log(`[${pid}] 🔍 Window vừa. Zoom 60%`);
-
-                 await page.evaluate(() => { document.body.style.zoom = '0.6'; });
-
-             }
-
-             
-
              await randomDelay(2000, 4000);
 
          }
@@ -350,89 +336,45 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
          if (sel) {
 
-           if (sel === 'MAGIC_AVATAR') {
+             try {
 
-               await clickMagicAvatar(page, pid);
+                await page.waitForSelector(sel, { timeout: 5000 });
 
-           }
+                await page.click(sel);
 
-           else if (sel.startsWith('force:')) {
+             } catch(e) {
 
-               sel = sel.replace('force:', '').trim();
+                 if (!sel.includes('submit')) console.warn("Click miss:", e);
 
-               
-
-               // Fix XPath JS Click
-
-               try { await page.waitForSelector(sel, { timeout: 5000 }); } catch(e) {}
-
-               const clicked = await page.evaluate((s) => {
-
-                   let el: any;
-
-                   if (s.startsWith('/') || s.startsWith('(')) {
-
-                       const result = document.evaluate(s, document, null, 9, null);
-
-                       el = result.singleNodeValue;
-
-                   } else {
-
-                       el = document.querySelector(s);
-
-                   }
-
-                   if (el) { el.click(); return true; }
-
-                   return false;
-
-               }, sel);
-
-               
-
-               if(!clicked) console.warn(`[${pid}] JS Click missed.`);
-
-               await randomDelay(2000, 3000);
-
-           } 
-
-           else {
-
-               await page.waitForSelector(sel, { timeout: 10000 });
-
-               await randomDelay(1000, 2000);
-
-               await Promise.all([
-
-                   page.click(sel),
-
-                   page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {})
-
-               ]);
-
-           }
+             }
 
          }
 
       } 
 
-      else if (type === 'type' || type === 'typetext') {
+      else if (type === 'type' || type === 'typetext' || type === 'input') {
 
          const sel = config.selector || config.target;
 
          const txt = config.text || config.value;
 
+         
+
          if (sel && txt) {
 
-           if (txt.includes('{{2fa}}')) await handleSmart2FA(page, code2FA);
+           if (txt.includes('{{2fa}}')) {
+
+               console.log("      -> Phát hiện bước 2FA. Gọi hàm xử lý...");
+
+               await handleSmart2FA(page, code2FA);
+
+           } 
 
            else {
 
                const finalTxt = replaceVariables(txt, profile);
 
                await page.waitForSelector(sel, { timeout: 10000 });
-
-               await randomDelay(1000, 2000);
 
                await page.type(sel, finalTxt, { delay: 100 });
 
@@ -450,7 +392,7 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
       }
 
-    } catch (e) { console.warn(`[${pid}] Node Error (Ignored):`, e); }
+    } catch (e) { console.warn(`[!] Node Error:`, e); }
 
     
 
@@ -458,7 +400,7 @@ async function executeWorkflowOnPage(page: Page, workflow: any, profile: any) {
 
   }
 
-  console.log(`[${pid}] DONE.`);
+  console.log(">>> [WORKFLOW] Done.");
 
 }
 
@@ -484,46 +426,11 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       }
 
-      // LẤY KÍCH THƯỚC CỬA SỔ BÉ TÍ TỪ CONTROLLER (ĐỂ XẾP GRID)
-      const winX = options.windowPosition?.x || 0;
-      const winY = options.windowPosition?.y || 0;
-      const winW = options.windowSize?.width || 1000;
-      const winH = options.windowSize?.height || 700;
-
       const args = [
-
         '--no-sandbox', '--disable-setuid-sandbox', '--disable-infobars',
-
-        
-
-        // Cửa sổ bên ngoài thì bé (để xếp gạch)
-
-        `--window-position=${winX},${winY}`,
-
-        `--window-size=${winW},${winH}`,
-
-        
-
-        '--force-device-scale-factor=0.7', // Thu nhỏ tỉ lệ UI lại chút cho dễ nhìn
-
-        '--ignore-certificate-errors',
-
+        '--window-position=0,0', '--ignore-certificate-errors',
         '--disable-blink-features=AutomationControlled',
-
-        '--no-first-run', '--disable-notifications', '--no-default-browser-check',
-
-        '--password-store=basic',
-
-        '--disable-background-timer-throttling',
-
-        '--disable-backgrounding-occluded-windows',
-
-        '--disable-renderer-backgrounding',
-
-        '--autoplay-policy=no-user-gesture-required',
-
-        '--disable-features=CalculateNativeWinOcclusion'
-
+        '--no-first-run', '--disable-notifications', '--no-default-browser-check'
       ];
 
       
@@ -552,16 +459,7 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       browserInstances.set(options.sessionId, browser);
 
-      const pages = await browser.pages();
-
-      const page = pages.length > 0 ? pages[0] : await browser.newPage();
-
-      await page.bringToFront();
-
-      // === QUAN TRỌNG NHẤT: ÉP MÀN HÌNH BÊN TRONG PHẢI TO ===
-      // Dù cửa sổ bé, nhưng "mắt" của Bot vẫn nhìn thấy giao diện rộng 1280px
-      // Điều này giúp Avatar luôn nằm đúng vị trí chuẩn
-      await page.setViewport({ width: 1280, height: 800 });
+      const page = (await browser.pages())[0] || await browser.newPage();
 
 
 
@@ -569,57 +467,21 @@ export async function runAndManageBrowser(profile: any, workflow: any, options: 
 
       if (options.userAgent) await page.setUserAgent(options.userAgent);
 
-
-
-      // === HACK: LUÔN BÁO LÀ ĐANG NHÌN MÀN HÌNH (BYPASS AUTO-PAUSE) ===
+      if (profile.screenWidth) await page.setViewport({ width: profile.screenWidth, height: profile.screenHeight });
 
       await page.evaluateOnNewDocument(() => {
-
-        // Xóa dấu vết Bot
-
-        const newProto = (navigator as any).__proto__;
-
+        const newProto = navigator.__proto__;
         delete newProto.webdriver;
-
         // @ts-ignore
-
-        (navigator as any).__proto__ = newProto;
-
-
-
-        // Fake Visibility (Quan trọng nhất để chạy nền)
-
-        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-
-        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-
-        
-
-        // Chặn sự kiện làm mờ (Blur)
-
-        window.addEventListener('blur', (e) => e.stopImmediatePropagation(), true);
-
-        window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
-
+        navigator.__proto__ = newProto;
       });
 
 
 
       try { await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 30000 }); } catch(e) {}
 
-
-
-      // Chạy không cần await để nó chạy song song
-
-      if (workflow) {
-
-          executeWorkflowOnPage(page, workflow, profile).then(() => {
-
-              // Xong thì kệ nó
-
-          });
-
-      } else console.log(">>> No workflow.");
+      if (workflow) await executeWorkflowOnPage(page, workflow, profile);
+      else console.log(">>> No workflow.");
 
 
 

@@ -561,45 +561,20 @@ export const importProfiles = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) => {
-  const { profileIds, concurrency, screenWidth, screenHeight } = req.body;
+  const { profileIds, concurrency } = req.body;
 
   if (!profileIds || !Array.isArray(profileIds)) {
       return res.status(400).json({ error: "Cần danh sách profileIds" });
   }
 
-  const count = profileIds.length;
-
-  // Tự động tính số cột và dòng dựa trên số lượng profile (cố gắng chia thành hình vuông hoặc chữ nhật)
-  const cols = Math.ceil(Math.sqrt(count)); 
-  const rows = Math.ceil(count / cols);
-
-  // Kích thước màn hình (Mặc định Full HD nếu không gửi lên)
-  const sWidth = screenWidth || 1920;
-  const sHeight = screenHeight || 1040; // Trừ thanh Taskbar
-
-  // Tính kích thước mỗi cửa sổ
-  const winWidth = Math.floor(sWidth / cols);
-  const winHeight = Math.floor(sHeight / rows);
-
-  console.log(`[LAYOUT] Sắp xếp ${count} profiles -> Lưới ${cols}x${rows} -> Size: ${winWidth}x${winHeight}`);
-
-  const limit = pLimit(concurrency || count); 
+  const limit = pLimit(concurrency || profileIds.length); 
   const browserService = await import('../services/browserService');
 
-  void profileIds.map((id, index) => {
+  console.log(`[BULK] Kích hoạt ${profileIds.length} profiles...`);
+
+  const tasks = profileIds.map((id) => {
       return limit(async () => {
-          // === THÊM DÒNG NÀY: CHỜ RẢI RÁC ===
-          // Profile thứ 1 chạy ngay. Profile thứ 2 chờ 2s. Profile thứ 3 chờ 4s...
-          // Giúp CPU không bị shock và mạng không bị nghẽn
-          await new Promise(resolve => setTimeout(resolve, index * 2000));
-
           try {
-              // Tính tọa độ X, Y
-              const colIndex = index % cols;
-              const rowIndex = Math.floor(index / cols);
-              const positionX = colIndex * winWidth;
-              const positionY = rowIndex * winHeight;
-
               const profile = await prisma.profile.findUnique({
                   where: { id: parseInt(String(id)) },
                   include: { workflow: true, proxy: true }
@@ -622,6 +597,8 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
                   data: { profile_id: profile.id, status: 'running', started_at: new Date() }
               });
 
+              console.log(`[LAUNCH] Đang mở cửa sổ cho Profile ${profile.id}...`);
+
               browserService.runAndManageBrowser(
                   profile,
                   profile.workflow,
@@ -629,10 +606,7 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
                       profileId: profile.id,
                       sessionId: session.id,
                       userAgent: profile.userAgent,
-                      proxy: proxyConfig,
-                      // Truyền tọa độ chuẩn
-                      windowPosition: { x: positionX, y: positionY },
-                      windowSize: { width: winWidth, height: winHeight }
+                      proxy: proxyConfig
                   }
               ).then(() => {
                   prisma.session.update({
@@ -647,5 +621,5 @@ export const runBulkProfiles = asyncHandler(async (req: Request, res: Response) 
       });
   });
 
-  res.json({ success: true, message: `Đang khởi động ${count} profiles (Layout ${cols}x${rows})...` });
+  res.json({ success: true, message: `Đã kích hoạt ${profileIds.length} profiles chạy song song!` });
 });
