@@ -14,6 +14,7 @@ import WorkflowEditor from './pages/WorkflowEditor'
 import AutomationBuilder from './pages/AutomationBuilder'
 import ProfileEditor from './components/ProfileEditor/ProfileEditor.jsx'
 import TwoFAPage from './pages/TwoFAPage'
+import SocialAnalyticsPage from './pages/SocialAnalyticsPage'
 import { api } from './lib/api'
 
 function App() {
@@ -66,6 +67,7 @@ function App() {
           <Route path="workflows/:id" element={<WorkflowEditor />} />
           <Route path="automation/:profileId" element={<AutomationBuilder />} />
           <Route path="2fa" element={<TwoFAPage />} />
+          <Route path="social-analytics" element={<SocialAnalyticsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

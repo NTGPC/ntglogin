@@ -394,3 +394,21 @@ model Changelog {
   @@index([created_at])
   @@map("changelogs")
 }
+
+// --- MODULE: SOCIAL ANALYTICS (Content Hunter) ---
+model TrackedVideo {
+  id               Int      @id @default(autoincrement()) // Dùng Int cho đồng bộ với hệ thống cũ
+  platform         String   @default("tiktok")            // tiktok, facebook, youtube
+  videoUrl         String   @unique                       // Link video (Key để tránh trùng)
+  channelUrl       String                                 // Link kênh
+  
+  viewCount        BigInt   @default(0)                   // Dùng BigInt vì view TikTok có thể lên hàng tỷ
+  rawView          String?                                // Lưu text gốc (VD: 10.5M)
+  
+  minViewThreshold Int      @default(0)                   // Ngưỡng view bro đặt (để tô màu)
+  isDownloaded     Boolean  @default(false)               // Trạng thái: Đã tải hay chưa
+  lastUpdated      DateTime @default(now())               // Ngày quét gần nhất
+  createdAt        DateTime @default(now())
+  
+  @@map("tracked_videos") // Đặt tên bảng trong DB là số nhiều cho chuẩn
+}

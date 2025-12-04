@@ -12,6 +12,7 @@ import {
   X,
   Workflow,
   ShieldCheck,
+  BarChart,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useState } from 'react'
@@ -27,6 +28,7 @@ const menuItems = [
   { path: '/executions', label: 'Executions', icon: Play },
   { path: '/workflows', label: 'Workflows', icon: Workflow },
   { path: '/2fa', label: 'Giải 2FA', icon: ShieldCheck },
+  { path: '/social-analytics', label: 'Tool Phân Tích MXH', icon: BarChart },
 ]
 
 export function Sidebar() {
