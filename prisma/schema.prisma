@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
+  // Không có dòng output nào cả
 }
 
 datasource db {
@@ -396,19 +396,39 @@ model Changelog {
 }
 
 // --- MODULE: SOCIAL ANALYTICS (Content Hunter) ---
+
+// 1. Bảng quản lý các phiên làm việc (Project)
+model AnalyticsSession {
+  id          String   @id @default(uuid())
+  name        String   // Tên gợi nhớ (VD: Kênh Tiệm Bánh Radio)
+  targetUrl   String   // Link kênh
+  minView     Int      // Cấu hình min view
+  
+  videos      TrackedVideo[] // Quan hệ 1-nhiều
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("analytics_sessions")
+}
+
+// 2. Cập nhật bảng Video (Thêm liên kết với Session)
 model TrackedVideo {
-  id               Int      @id @default(autoincrement()) // Dùng Int cho đồng bộ với hệ thống cũ
-  platform         String   @default("tiktok")            // tiktok, facebook, youtube
-  videoUrl         String   @unique                       // Link video (Key để tránh trùng)
-  channelUrl       String                                 // Link kênh
+  id               Int      @id @default(autoincrement())
+  sessionId        String   // Khóa ngoại
+  session          AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  platform         String   @default("facebook")            // tiktok, facebook, youtube
+  videoUrl         String                                   // Link video (Không unique toàn cục nữa)
   
   viewCount        BigInt   @default(0)                   // Dùng BigInt vì view TikTok có thể lên hàng tỷ
   rawView          String?                                // Lưu text gốc (VD: 10.5M)
   
-  minViewThreshold Int      @default(0)                   // Ngưỡng view bro đặt (để tô màu)
   isDownloaded     Boolean  @default(false)               // Trạng thái: Đã tải hay chưa
   lastUpdated      DateTime @default(now())               // Ngày quét gần nhất
   createdAt        DateTime @default(now())
   
-  @@map("tracked_videos") // Đặt tên bảng trong DB là số nhiều cho chuẩn
+  // Đảm bảo trong 1 project không có video trùng
+  @@unique([sessionId, videoUrl])
+  @@map("tracked_videos")
 }

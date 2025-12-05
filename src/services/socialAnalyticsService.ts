@@ -19,7 +19,7 @@ const parseViewCount = (text: string): number => {
   return Math.floor(num * multiplier);
 };
 
-export const scanTikTokChannel = async (channelUrl: string, minView: number) => {
+export const scanTikTokChannel = async (channelUrl: string, minView: number, sessionId: string) => {
   console.log(`>>> [Scan Unlimited] Channel: ${channelUrl}`);
   
   // 1. TÌM PROFILE MỒI (Giữ nguyên)
@@ -166,20 +166,20 @@ export const scanTikTokChannel = async (channelUrl: string, minView: number) => 
         const viewCount = parseViewCount(item.rawView);
         
         await prisma.trackedVideo.upsert({
-            where: { videoUrl: item.videoUrl },
+            where: { 
+                sessionId_videoUrl: { sessionId, videoUrl: item.videoUrl } // Khóa unique mới
+            },
             update: {
                 viewCount: viewCount,
                 rawView: item.rawView,
-                minViewThreshold: minView,
                 lastUpdated: new Date()
             },
             create: {
+                sessionId: sessionId, // <-- QUAN TRỌNG: Gắn video vào project
                 platform: 'tiktok',
                 videoUrl: item.videoUrl,
-                channelUrl: channelUrl,
                 viewCount: viewCount,
                 rawView: item.rawView,
-                minViewThreshold: minView,
                 isDownloaded: false
             }
         });
@@ -196,22 +196,20 @@ export const scanTikTokChannel = async (channelUrl: string, minView: number) => 
 };
 
 // --- HÀM MỚI: QUÉT FACEBOOK ---
-export const scanFacebookPage = async (channelUrl: string, minView: number) => {
-  console.log(`>>> [Scan FB Realtime] Page: ${channelUrl}`);
+export const scanFacebookPage = async (channelUrl: string, minView: number, sessionId: string) => {
+  console.log(`>>> [Scan FB v2] Page: ${channelUrl}`);
 
-  // 1. Khởi tạo Profile & Browser (Giữ nguyên)
-  const scannerProfile = await prisma.profile.findFirst({ 
-    where: { name: 'Scanner_Facebook' } 
-  });
-  if (!scannerProfile) throw new Error("❌ Không tìm thấy Profile 'Scanner_Facebook'");
-
+  // 1. Khởi tạo (Giữ nguyên code cũ phần này)
+  const scannerProfile = await prisma.profile.findFirst({ where: { name: 'Scanner_Facebook' } });
+  if (!scannerProfile) throw new Error("❌ Thiếu Profile 'Scanner_Facebook'");
+  
   const profileDir = path.join(process.cwd(), 'browser_profiles', `profile_${scannerProfile.id}`);
-
+  
   if (!fs.existsSync(profileDir)) {
       fs.mkdirSync(profileDir, { recursive: true });
   }
 
-  // Tìm Chrome executable path (giống TikTok)
+  // Tìm Chrome executable path
   let exPath = undefined;
   const DEFAULT_CHROME_PATHS = [
     process.env.CHROME_EXECUTABLE_PATH,
@@ -225,41 +223,16 @@ export const scanFacebookPage = async (channelUrl: string, minView: number) => {
   }
 
   const browser = await puppeteer.launch({
-    headless: false, // Để false để bro thấy nó chạy
+    headless: false,
     executablePath: exPath,
     userDataDir: profileDir,
-    ignoreHTTPSErrors: true,
-    args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', // Giảm tải bộ nhớ chia sẻ
-        '--disable-accelerated-2d-canvas', // Tắt tăng tốc phần cứng nếu lỗi GPU
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu', // Nếu máy yếu hoặc VPS thì nên bật dòng này
-        '--hide-scrollbars',
-        '--mute-audio',
-        '--disable-notifications',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-breakpad',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-extensions',
-        '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-        '--disable-ipc-flooding-protection',
-        '--disable-renderer-backgrounding',
-        '--enable-features=NetworkService,NetworkServiceInProcess',
-        '--force-color-profile=srgb',
-        '--metrics-recording-only',
-        '--password-store=basic',
-        '--use-mock-keychain',
-        '--window-size=1280,800',
-        '--disable-blink-features=AutomationControlled' // Quan trọng để bypass bot
-    ],
+    // Copy lại cái args tối ưu ở bài trước (chống crash) vào đây
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-notifications', '--window-size=1280,800', '--disable-blink-features=AutomationControlled'],
     defaultViewport: null
   });
-  const page = await browser.newPage();
 
+  const page = await browser.newPage();
+  
   try {
     let targetUrl = channelUrl;
     if (!channelUrl.includes('/videos') && !channelUrl.includes('/reels')) {
@@ -270,95 +243,106 @@ export const scanFacebookPage = async (channelUrl: string, minView: number) => {
     // --- LOGIC VỪA CUỘN VỪA LƯU ---
     let previousHeight = 0;
     let noChangeCount = 0;
-    
-    // Cache danh sách URL đã lưu để đỡ phải gọi DB nhiều lần
     const savedUrls = new Set<string>();
+
     console.log("--> FB: Bắt đầu chạy Realtime...");
-    
+
     while (true) {
-        // 1. SCROLL
+        // 1. Scroll
         previousHeight = await page.evaluate('document.body.scrollHeight') as number;
         await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
-        
-        // 2. CHỜ LOAD & CÀO DỮ LIỆU NGAY LẬP TỨC (Không chờ hết)
-        await new Promise(r => setTimeout(r, 4000)); // Chờ 4s cho video mới hiện ra
-        
-        // 3. CÀO DỮ LIỆU TRÊN MÀN HÌNH HIỆN TẠI
+        await new Promise(r => setTimeout(r, 3000)); // Chờ load
+
+        // 2. CÀO DỮ LIỆU (SELECTOR ĐA NĂNG)
         const currentItems = await page.evaluate(() => {
             const data: any[] = [];
+            // Tìm thẻ A có link video
             const anchors = Array.from(document.querySelectorAll('a[href*="/videos/"], a[href*="/reel/"]'));
             
             for (const a of anchors) {
                 const href = (a as HTMLAnchorElement).href;
-                if (href.includes('comment_id')) continue; // Bỏ link rác
-                
-                // Tìm view
+                if (href.includes('comment_id') || href.includes('t=')) continue; 
+
+                // TÌM VIEW COUNT (CHIẾN THUẬT QUÉT RỘNG)
                 let viewText = "0";
-                let container = a.parentElement;
                 
-                for (let i = 0; i < 5; i++) {
+                // Cách 1: Tìm trong thẻ cha (Layout List)
+                let container = a.parentElement;
+                for (let i = 0; i < 6; i++) { // Leo cao hơn chút (6 cấp)
                     if (!container) break;
-                    const text = container.innerText;
-                    const match = text.match(/(\d+(\.\d+)?[KMB]?)\s*(views|lượt xem|Views)/);
+                    const text = container.innerText || "";
+                    
+                    // Regex tìm: 46K views, 46K lượt xem, 46.5K • 3 days ago
+                    const match = text.match(/(\d+(\.\d+)?[KMB]?)\s*(views|lượt xem|Views|•)/);
                     if (match) {
                         viewText = match[1];
                         break;
                     }
                     container = container.parentElement;
                 }
+
+                // Cách 2: Nếu view = 0, thử tìm thẻ span/div hàng xóm (Layout Grid)
+                if (viewText === "0" && a.parentElement) {
+                    const siblings = a.parentElement.parentElement?.innerText || "";
+                    const match = siblings.match(/(\d+(\.\d+)?[KMB]?)\s*(views|lượt xem)/);
+                    if (match) viewText = match[1];
+                }
+
                 data.push({ videoUrl: href, rawView: viewText });
             }
             return data;
         });
-        
-        // 4. LƯU NGAY VÀO DATABASE (REALTIME)
+
+        // 3. LƯU NGAY (REALTIME SAVE)
         let newCount = 0;
         for (const item of currentItems) {
-            // Chỉ lưu nếu chưa có trong cache phiên này (Tối ưu tốc độ)
             if (!savedUrls.has(item.videoUrl)) {
                 savedUrls.add(item.videoUrl);
-                
                 const viewCount = parseViewCount(item.rawView);
                 
-                // Điều kiện lọc ngay tại nguồn: view >= minView mới lưu
-                if (viewCount >= minView) {
-                    await prisma.trackedVideo.upsert({
-                        where: { videoUrl: item.videoUrl },
-                        update: {
-                            viewCount: viewCount,
-                            rawView: item.rawView,
-                            minViewThreshold: minView,
-                            lastUpdated: new Date()
-                        },
-                        create: {
-                            platform: 'facebook',
-                            videoUrl: item.videoUrl,
-                            channelUrl: channelUrl,
-                            viewCount: viewCount,
-                            rawView: item.rawView,
-                            minViewThreshold: minView,
-                            isDownloaded: false
-                        }
-                    });
-                    newCount++;
-                }
+                // --- [FIX SAI LẦM TẠI ĐÂY] ---
+                // CŨ: if (viewCount >= minView) { ... }  <-- XÓA DÒNG NÀY ĐI
+                // MỚI: Lưu tuốt luốt, 0 view cũng lưu!
+                
+                await prisma.trackedVideo.upsert({
+                    where: { 
+                            sessionId_videoUrl: { sessionId, videoUrl: item.videoUrl }
+                    },
+                    update: {
+                        viewCount: viewCount,
+                        rawView: item.rawView,
+                        lastUpdated: new Date()
+                    },
+                    create: {
+                        sessionId: sessionId,
+                        platform: 'facebook',
+                        videoUrl: item.videoUrl,
+                        viewCount: viewCount,
+                        rawView: item.rawView,
+                        isDownloaded: false
+                    }
+                });
+                newCount++; // Đếm số lượng đã lưu
             }
         }
-        console.log(`--> Vừa lưu thêm ${newCount} video mới vào DB...`);
-        
-        // 5. KIỂM TRA ĐIỀU KIỆN DỪNG
+
+        if (newCount > 0) console.log(`--> 🔥 Đã lưu thêm ${newCount} video mới!`);
+
+        // 4. KIỂM TRA HẾT TRANG
         const newHeight = await page.evaluate('document.body.scrollHeight') as number;
         if (newHeight === previousHeight) {
             noChangeCount++;
-            console.log(`... Đang tìm thêm (${noChangeCount}/5)`);
-            if (noChangeCount >= 5) break; // Hết video
+            if (noChangeCount >= 4) {
+                console.log("--> Đáy rồi! Dừng.");
+                break; 
+            }
         } else {
             noChangeCount = 0;
         }
     }
 
   } catch (e) {
-      console.error("FB Scrape Error:", e);
+      console.error("FB Error:", e);
       throw e;
   } finally {
       await browser.close();

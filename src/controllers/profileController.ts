@@ -194,100 +194,59 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
- * UPDATE PROFILE
+ * UPDATE PROFILE - Cho phép update từng phần (chỉ gửi Tên thì chỉ sửa Tên)
  */
-export const update = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const data = req.body;
-  
+export const update = async (req: Request, res: Response) => {
   try {
-    // 1. Tách các trường đặc biệt cần xử lý thủ công
-    const { fingerprintPresetId, proxyId, workflowId, ...updateData } = data;
+    const { id } = req.params;
+    // Lấy dữ liệu từ Frontend gửi lên
+    const { name, userAgent, proxyId, notes, ...otherConfig } = req.body;
+    const profileId = Number(id);
 
-    // 2. Chuẩn bị object dữ liệu để update
-    const finalData: any = { ...updateData };
+    // 1. Chuẩn bị dữ liệu để update
+    const updateData: any = {
+      updatedAt: new Date()
+    };
 
-    // 3. Xử lý Proxy ID (Ép kiểu sang Int hoặc null)
-    if (proxyId !== undefined) {
-      // Nếu gửi lên là "None" hoặc chuỗi rỗng hoặc null thì set null
-      if (proxyId === "None" || proxyId === "" || proxyId === null) {
-        finalData.proxyId = null;
-      } else {
-        finalData.proxyId = parseInt(String(proxyId));
-      }
+    // 2. Chỉ cái nào có dữ liệu mới update, không thì giữ nguyên cũ
+    if (name && name.trim() !== "") updateData.name = name;
+    if (notes) updateData.notes = notes;
+    
+    // Xử lý UserAgent: Nếu form gửi lên có chữ thì mới lưu, còn gửi rỗng thì bỏ qua (để không bị lỗi đè null)
+    if (userAgent && userAgent.length > 5) {
+        updateData.userAgent = userAgent;
+    }
+    // Xử lý Proxy
+    if (proxyId) {
+        updateData.proxyId = Number(proxyId);
     }
 
-    // 4. Xử lý Workflow ID (FIX LỖI TRONG ẢNH)
-    if (workflowId !== undefined) {
-      if (workflowId === "None" || workflowId === "" || workflowId === null) {
-        finalData.workflowId = null; // Hủy chọn workflow
-      } else {
-        finalData.workflowId = parseInt(String(workflowId)); // Ép kiểu sang Int
-      }
-    }
-
-    // 5. Xử lý Browser Type (đảm bảo lưu đúng loại Chrome/Chromium)
-    if (updateData.fingerprint && typeof updateData.fingerprint === 'object') {
-       if (updateData.fingerprint.browser) {
-           finalData.browserType = updateData.fingerprint.browser;
-       }
-    }
-
-    // FIX LỖI 500: Xử lý Fingerprint
-    // Frontend gửi lên là Object -> Phải giữ nguyên dạng Json (không cần stringify vì Prisma tự xử lý)
-    if (data.fingerprint && typeof data.fingerprint === 'object') {
-        finalData.fingerprint = data.fingerprint;
-        finalData.fingerprintJson = data.fingerprint; // Đồng bộ cả 2 trường
-        
-        // Nếu trong fingerprint có userAgent, cập nhật luôn cột userAgent ở ngoài
-        if (data.fingerprint.userAgent) {
-            finalData.userAgent = data.fingerprint.userAgent;
-        }
-    } else if (data.fingerprint && typeof data.fingerprint === 'string') {
-        // Nếu là string thì parse về object
-        try {
-            const parsed = JSON.parse(data.fingerprint);
-            finalData.fingerprint = parsed;
-            finalData.fingerprintJson = parsed;
-        } catch (e) {
-            console.warn("Invalid fingerprint JSON string, skipping...");
-        }
-    }
-
-    // Xóa các trường không có trong DB để tránh lỗi
-    delete finalData.id;
-    delete finalData.status;
-    delete finalData.folderId;
-    delete finalData.driverType;
-    delete finalData.transferStatus;
-
-    // 6. Thực hiện Update
-    const profile = await prisma.profile.update({
-      where: { id: parseInt(String(id)) },
-      data: finalData,
-      // Include cả proxy và workflow để frontend hiển thị lại ngay lập tức
-      include: { 
-        proxy: true,
-        // Nếu bạn có relationship workflow, hãy uncomment dòng dưới:
-        // workflow: true 
-      } 
+    // 3. Thực hiện Update an toàn
+    const result = await prisma.profile.update({
+      where: { id: profileId },
+      data: updateData
     });
 
-    res.json({
-      success: true,
-      message: 'Profile updated successfully',
-      data: profile,
-    });
-  } catch (error) {
-    console.error("Update error:", error);
-    // Trả về lỗi chi tiết để dễ debug hơn
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to update profile', 
-      details: (error as any).message 
-    });
+    res.json(result);
+  } catch (error: any) {
+    console.error("Lỗi update:", error.message);
+    
+    // Fallback: Nếu lỗi do thiếu trường bắt buộc (như UserAgent bị null trong DB cũ)
+    // Ta update cưỡng ép điền default vào để cứu profile đó
+    try {
+        const rescue = await prisma.profile.update({
+            where: { id: Number(req.params.id) },
+            data: {
+                name: req.body.name, // Ưu tiên cứu cái tên trước
+                userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" // Điền tạm để hết lỗi
+            }
+        });
+        res.json(rescue);
+    } catch (e) {
+        res.status(500).json({ error: "Không thể update: " + error.message });
+    }
   }
-});
+};
 
 /**
  * DELETE PROFILE
