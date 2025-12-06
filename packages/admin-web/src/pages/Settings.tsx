@@ -358,13 +358,13 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Settings - Fingerprint Libraries</h1>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
+    <div className="space-y-6">
+      {/* Header Tĩnh (Không Sticky nữa cho đỡ lỗi) */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Settings - Fingerprint Libraries</h1>
+        
+        {/* Tabs */}
+        <div className="border-b border-gray-200 mt-4">
         <button
           onClick={() => setActiveTab('user-agents')}
           className={`px-4 py-2 font-medium ${
@@ -395,8 +395,11 @@ export default function Settings() {
         >
           Fingerprint Presets ({presets.length})
         </button>
+        </div>
       </div>
 
+      {/* Nội dung Tab */}
+      <div className="pt-4">
       {/* User Agents Tab */}
       {activeTab === 'user-agents' && (
         <div className="space-y-4">
@@ -407,19 +410,20 @@ export default function Settings() {
             </Button>
           </div>
 
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>OS</TableHead>
-                  <TableHead>Platform</TableHead>
-                  <TableHead>Browser Version</TableHead>
-                  <TableHead>User Agent</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+          <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto w-full">
+              <Table className="w-full text-left border-collapse whitespace-nowrap">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>OS</TableHead>
+                    <TableHead>Platform</TableHead>
+                    <TableHead>Browser Version</TableHead>
+                    <TableHead>User Agent</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {userAgents.map((ua) => (
                   <TableRow key={ua.id}>
@@ -453,6 +457,7 @@ export default function Settings() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
       )}
@@ -467,17 +472,18 @@ export default function Settings() {
             </Button>
           </div>
 
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Renderer</TableHead>
-                  <TableHead>OS</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+          <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto w-full">
+              <Table className="w-full text-left border-collapse whitespace-nowrap">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Renderer</TableHead>
+                    <TableHead>OS</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {webglRenderers.map((webgl) => (
                   <TableRow key={webgl.id}>
@@ -507,6 +513,7 @@ export default function Settings() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
       )}
@@ -521,20 +528,21 @@ export default function Settings() {
             </Button>
           </div>
 
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>OS</TableHead>
-                  <TableHead>Browser</TableHead>
-                  <TableHead>GPU</TableHead>
-                  <TableHead>Screen</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+          <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto w-full">
+              <Table className="w-full text-left border-collapse whitespace-nowrap">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>OS</TableHead>
+                    <TableHead>Browser</TableHead>
+                    <TableHead>GPU</TableHead>
+                    <TableHead>Screen</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
               <TableBody>
                 {presets.map((preset) => (
                   <TableRow key={preset.id}>
@@ -575,9 +583,11 @@ export default function Settings() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
       )}
+      </div>
 
       {/* User Agent Dialog */}
       <Dialog open={userAgentDialogOpen} onOpenChange={setUserAgentDialogOpen}>

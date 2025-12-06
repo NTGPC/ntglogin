@@ -298,19 +298,20 @@ export default function Proxies() {
         </div>
       </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Host:Port</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Username</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+      <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto w-full">
+          <Table className="w-full text-left border-collapse whitespace-nowrap">
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Host:Port</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Username</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
@@ -376,6 +377,7 @@ export default function Proxies() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
       {totalPages > 1 && (

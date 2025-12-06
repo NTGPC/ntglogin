@@ -18,6 +18,7 @@ import userAgentRoutes from './userAgentRoutes';
 import webglRendererRoutes from './webglRendererRoutes';
 import fingerprintPresetRoutes from './fingerprintPresetRoutes';
 import socialRoutes from './socialRoutes';
+import analyticsRoutes from './analyticsRoutes';
 import { authenticate } from '../middleware/auth';
 
 const router = Router();
@@ -48,7 +49,8 @@ router.use('/gpus', gpuRoutes);
 router.use('/user-agents', userAgentLibraryRoutes); // Legacy route
 router.use('/user-agents-library', requireAuth, userAgentRoutes); // New CRUD route for UserAgent library
 router.use('/webgl-renderers', requireAuth, webglRendererRoutes); // New CRUD route for WebGL Renderer library
-router.use('/social', requireAuth, socialRoutes); // Social Analytics (Content Hunter)
+router.use('/social', requireAuth, socialRoutes); // Social Analytics (Content Hunter) - Legacy
+router.use('/analytics', analyticsRoutes); // Analytics Sessions (New Project-based system)
 
 // Health check
 router.get('/health', (_req, res) => {
