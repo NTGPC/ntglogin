@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 
 import { NavLink, useLocation } from 'react-router-dom';
 
@@ -8,155 +8,299 @@ import {
 
   MonitorPlay, ListTodo, PlaySquare, Workflow, ShieldCheck, 
 
-  BarChart2, Menu 
+  BarChart2, X, Menu
 
-} from 'lucide-react'; // Đảm bảo import đủ icon
+} from 'lucide-react';
 
 export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const location = useLocation();
 
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const sidebar = useRef<any>(null);
+
   const menuItems = [
 
-    { path: '/', name: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+    { 
 
-    { path: '/profiles', name: 'Profiles', icon: <Users size={20} /> },
+      path: '/', 
 
-    { path: '/proxies', name: 'Proxies', icon: <Network size={20} /> },
+      name: 'Dashboard', 
 
-    { path: '/fingerprints', name: 'Fingerprints', icon: <Fingerprint size={20} /> },
+      icon: <LayoutDashboard size={20} className="text-blue-600" /> // Màu xanh dương
 
-    { path: '/settings', name: 'Settings', icon: <Settings size={20} /> },
+    },
 
-    { path: '/sessions', name: 'Sessions', icon: <MonitorPlay size={20} /> },
+    { 
 
-    { path: '/jobs', name: 'Jobs', icon: <ListTodo size={20} /> },
+      path: '/profiles', 
 
-    { path: '/executions', name: 'Executions', icon: <PlaySquare size={20} /> },
+      name: 'Profiles', 
 
-    { path: '/workflows', name: 'Workflows', icon: <Workflow size={20} /> },
+      icon: <Users size={20} className="text-indigo-600" /> // Xanh chàm
 
-    { path: '/2fa', name: 'Giải 2FA', icon: <ShieldCheck size={20} className="text-green-600"/> },
+    },
 
-    { path: '/social-analytics', name: 'Tool Phân Tích MXH', icon: <BarChart2 size={20} className="text-purple-600"/> },
+    { 
+
+      path: '/proxies', 
+
+      name: 'Proxies', 
+
+      icon: <Network size={20} className="text-cyan-600" /> // Xanh lơ
+
+    },
+
+    { 
+
+      path: '/fingerprints', 
+
+      name: 'Fingerprints', 
+
+      icon: <Fingerprint size={20} className="text-teal-600" /> // Xanh ngọc
+
+    },
+
+    { 
+
+      path: '/settings', 
+
+      name: 'Settings', 
+
+      icon: <Settings size={20} className="text-slate-600" /> // Xám
+
+    },
+
+    { 
+
+      path: '/sessions', 
+
+      name: 'Sessions', 
+
+      icon: <MonitorPlay size={20} className="text-orange-500" /> // Cam
+
+    },
+
+    { 
+
+      path: '/jobs', 
+
+      name: 'Jobs', 
+
+      icon: <ListTodo size={20} className="text-yellow-600" /> // Vàng đất
+
+    },
+
+    { 
+
+      path: '/executions', 
+
+      name: 'Executions', 
+
+      icon: <PlaySquare size={20} className="text-red-500" /> // Đỏ
+
+    },
+
+    { 
+
+      path: '/workflows', 
+
+      name: 'Workflows', 
+
+      icon: <Workflow size={20} className="text-pink-600" /> // Hồng
+
+    },
+
+    // --- 2 MỤC ĐẠI CA YÊU CẦU ---
+
+    { 
+
+      path: '/2fa', 
+
+      name: 'Giải 2FA', 
+
+      icon: <ShieldCheck size={20} className="text-emerald-500" /> // Xanh lá bảo mật (Như hình cũ)
+
+    },
+
+    { 
+
+      path: '/social-analytics', 
+
+      name: 'Tool Phân Tích MXH', 
+
+      icon: <BarChart2 size={20} className="text-violet-600" /> // Tím mộng mơ (Biểu đồ)
+
+    },
 
   ];
 
   return (
 
-    // 1. KHUNG BAO NGOÀI CÙNG (Full màn hình, không cuộn body)
-
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
 
-      
+      {/* SIDEBAR với animation đóng/mở */}
 
-      {/* 2. SIDEBAR (Cố định bên trái) */}
+      <aside
 
-      <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 z-40 flex flex-col h-full shadow-sm">
+        ref={sidebar}
 
-        <div className="h-16 flex items-center px-6 border-b border-gray-100">
+        className={`absolute left-0 top-0 z-50 flex h-screen flex-col overflow-y-hidden duration-300 ease-linear lg:static
 
-           <h1 className="text-xl font-black text-gray-800 tracking-tight">NTG Login Admin</h1>
+        border-r border-stroke dark:border-strokedark
+
+        bg-white dark:bg-boxdark text-black dark:text-white
+
+        ${sidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:w-0'}`}
+
+      >
+
+        {/* HEADER LOGO */}
+
+        <div className="flex items-center justify-between gap-2 px-6 py-5.5 lg:py-6.5 border-b border-stroke dark:border-strokedark h-20 min-h-[80px]">
+
+          <NavLink to="/" className="text-2xl font-bold text-black dark:text-white flex items-center gap-2 whitespace-nowrap">
+
+             🚀 NTG LOGIN
+
+          </NavLink>
+
+          <button
+
+            onClick={() => setSidebarOpen(false)}
+
+            className="block lg:hidden text-black dark:text-white"
+
+          >
+
+            <X size={24} />
+
+          </button>
 
         </div>
 
-        
+        {/* MENU LIST */}
 
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
+        <div className="no-scrollbar flex flex-col overflow-y-auto duration-300 ease-linear">
 
-           {menuItems.map((item) => {
+          <nav className="mt-5 py-4 px-4 lg:mt-9 lg:px-6">
 
-             const isActive = location.pathname === item.path;
+            <ul className="mb-6 flex flex-col gap-1.5">
 
-             return (
+              {menuItems.map((item) => (
 
-               <NavLink key={item.path} to={item.path}
+                 <li key={item.path}>
 
-                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
+                   <NavLink
 
-                 ${isActive 
+                     to={item.path}
 
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
+                     className={({ isActive }) =>
 
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                       `group relative flex items-center gap-3 rounded-lg py-2.5 px-4 font-medium duration-200 ease-in-out
 
-                 }`}
+                       ${isActive 
 
-               >
+                          ? 'bg-[#9BDBC3] text-black shadow-md' 
 
-                 {item.icon}
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-black'
 
-                 <span>{item.name}</span>
+                       }`
 
-               </NavLink>
+                     }
 
-             );
+                   >
 
-           })}
+                     {item.icon}
 
-        </nav>
+                     {item.name}
+
+                   </NavLink>
+
+                 </li>
+
+              ))}
+
+            </ul>
+
+          </nav>
+
+        </div>
 
       </aside>
 
 
 
-      {/* 3. KHUNG PHẢI (Chứa Header + Nội dung chính) */}
+      {/* KHUNG PHẢI (Chứa Header + Nội dung chính) */}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
 
-        
-
-        {/* --- HEADER (SỬA LẠI Ở ĐÂY) --- */}
-
-        {/* Đã xóa 'lg:ml-64', thêm 'w-full', 'bg-white' */}
+        {/* HEADER với nút Menu */}
 
         <header className="sticky top-0 z-30 flex h-16 w-full items-center gap-4 border-b border-gray-200 bg-white px-6 shadow-sm">
 
-            {/* Nút Menu mobile (ẩn trên desktop) */}
+          {/* Hamburger Toggle - Hiện trên cả máy tính và mobile */}
 
-            <button className="lg:hidden p-2 text-gray-600">
+          <div className="flex items-center gap-2 sm:gap-4">
 
-                <Menu size={20} />
+            <button
+
+              onClick={(e) => {
+
+                e.stopPropagation();
+
+                setSidebarOpen(!sidebarOpen);
+
+              }}
+
+              className="z-50 block rounded border border-stroke bg-white p-1.5 shadow-sm dark:border-strokedark dark:bg-boxdark dark:text-white"
+
+            >
+
+              <Menu className="h-5 w-5" />
 
             </button>
 
-            
+            {/* Logo (Chỉ hiện khi Sidebar đóng hoặc trên Mobile) */}
 
-            {/* Breadcrumb hoặc Tiêu đề (Bro có thể custom thêm) */}
+            <NavLink className="block flex-shrink-0 lg:hidden" to="/">
 
-            <div className="flex-1"></div>
+              <h1 className="font-bold text-primary">NTG</h1>
 
+            </NavLink>
 
+          </div>
 
-            {/* User Info / Avatar góc phải */}
+          {/* Breadcrumb hoặc Tiêu đề */}
 
-            <div className="flex items-center gap-2">
+          <div className="flex-1"></div>
 
-                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold">
+          {/* User Info / Avatar góc phải */}
 
-                    A
+          <div className="flex items-center gap-2">
 
-                </div>
+            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold">
+
+              A
 
             </div>
+
+          </div>
 
         </header>
 
-
-
-        {/* --- MAIN CONTENT (Cuộn nội dung ở đây) --- */}
+        {/* MAIN CONTENT */}
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50 p-6 scroll-smooth">
 
-            <div className="max-w-full mx-auto">
+          <div className="max-w-full mx-auto">
 
-               {children} 
+            {children} 
 
-            </div>
+          </div>
 
         </main>
-
-
 
       </div>
 

@@ -2,6 +2,8 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import routes from './routes';
 import { errorHandler } from './utils/errorHandler';
 import { loadGPUData } from './services/gpuService';
@@ -120,12 +122,42 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
+// Create HTTP server
+const httpServer = createServer(app);
+
+// Initialize Socket.io with CORS configuration
+const io = new Server(httpServer, {
+  cors: {
+    // Cho phép cả localhost và 127.0.0.1 truy cập
+    origin: [
+      "http://localhost:5173", 
+      "http://localhost:5175", 
+      "http://127.0.0.1:5173", 
+      "http://127.0.0.1:5175",
+      "*" // Hoặc để dấu sao này là chấp hết mọi nguồn (Dễ chịu nhất khi dev)
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  transports: ['websocket', 'polling'] // Thêm dòng này cho chắc
+});
+
+// Socket.io connection handler
+io.on('connection', (socket) => {
+  console.log(`🔌 Client connected: ${socket.id}`);
+  
+  socket.on('disconnect', () => {
+    console.log(`🔌 Client disconnected: ${socket.id}`);
+  });
+});
+
 // Start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📚 API documentation: http://localhost:${PORT}/api/health`);
   console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🛡️  Global exception handlers activated`);
+  console.log(`🔌 Socket.io server initialized`);
 });
 
 export default app;

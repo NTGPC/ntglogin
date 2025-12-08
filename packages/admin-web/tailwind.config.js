@@ -16,6 +16,27 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       colors: {
+        current: 'currentColor',
+        'white': '#FFFFFF',
+        'black': '#1C2434',
+        // --- THAY ĐỔI Ở ĐÂY ---
+        'primary': '#9BDBC3', // Mã màu cũ là #3C50E0, giờ đổi thành màu Bạc Hà (155, 219, 195)
+        // ----------------------
+        'stroke': '#E2E8F0',
+        'gray': '#EFF4FB',       
+        'gray-2': '#F7F9FC',
+        'whiten': '#F1F5F9',
+        'boxdark': '#24303F',    
+        'boxdark-2': '#1A222C',
+        'strokedark': '#2E3A47', 
+        'form-input': '#1D2A39', 
+        'meta-4': '#313D4A',     
+        'bodydark': '#AEB7C0',
+        'bodydark1': '#DEE4EE',
+        'bodydark2': '#8A99AF',
+        'success': '#219653',
+        'danger': '#D34053',
+        'warning': '#FFA70B',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -26,7 +47,7 @@ export default {
           DEFAULT: 'hsl(var(--popover))',
           foreground: 'hsl(var(--popover-foreground))',
         },
-        primary: {
+        primaryOld: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
         },
