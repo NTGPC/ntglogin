@@ -8,7 +8,7 @@ import {
 
   MonitorPlay, ListTodo, PlaySquare, Workflow, ShieldCheck, 
 
-  BarChart2, X, Menu
+  BarChart2, X, Menu, Clapperboard
 
 } from 'lucide-react';
 
@@ -131,6 +131,16 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       name: 'Tool Phân Tích MXH', 
 
       icon: <BarChart2 size={20} className="text-violet-600" /> // Tím mộng mơ (Biểu đồ)
+
+    },
+
+    { 
+
+      path: '/video-editor', 
+
+      name: 'Video Editor Studio', 
+
+      icon: <Clapperboard size={20} className="text-rose-500" /> 
 
     },
 

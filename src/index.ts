@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import routes from './routes';
+import editorRoutes from './routes/editorRoutes';
 import { errorHandler } from './utils/errorHandler';
 import { loadGPUData } from './services/gpuService';
 import { loadUserAgentLibrary } from './services/userAgentLibraryService';
@@ -44,6 +45,12 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api', routes);
+app.use('/api/editor', editorRoutes);
+
+// --- CẤU HÌNH STREAM FILES (QUAN TRỌNG) ---
+// Frontend sẽ gọi: http://localhost:3000/stream/video/abc.mp4
+app.use('/stream/video', express.static('D:\\NTG_Studio\\Videos'));
+app.use('/stream/audio', express.static('D:\\NTG_Studio\\Audios'));
 
 // Diagnostics static page
 app.get('/diagnostics', (_req, res) => {

@@ -15,6 +15,7 @@ import AutomationBuilder from './pages/AutomationBuilder'
 import ProfileEditor from './components/ProfileEditor/ProfileEditor.jsx'
 import TwoFAPage from './pages/TwoFAPage'
 import SocialAnalyticsPage from './pages/SocialAnalyticsPage'
+import VideoEditorPage from './pages/VideoEditorPage'
 import { api } from './lib/api'
 
 function App() {
@@ -68,6 +69,7 @@ function App() {
           <Route path="automation/:profileId" element={<AutomationBuilder />} />
           <Route path="2fa" element={<TwoFAPage />} />
           <Route path="social-analytics" element={<SocialAnalyticsPage />} />
+          <Route path="video-editor" element={<VideoEditorPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

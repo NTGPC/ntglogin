@@ -432,3 +432,18 @@ model TrackedVideo {
   @@unique([sessionId, videoUrl])
   @@map("tracked_videos")
 }
+
+// Video Editor Project model
+model VideoEditorProject {
+  id          String   @id @default(uuid())
+  name        String
+  audioPaths  String   @default("[]") // JSON
+  videoPaths  String   @default("[]") // JSON
+  logoPath    String?
+  config      String?  // JSON for text/logo settings
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("video_editor_projects")
+}
