@@ -3,8 +3,8 @@ import * as socialService from '../services/socialAnalyticsService';
 import { AppError, asyncHandler } from '../utils/errorHandler';
 
 export const scan = asyncHandler(async (req: Request, res: Response) => {
-  const { channelUrl, minView } = req.body;
-  
+  const { channelUrl, minView, sessionId } = req.body;
+
   if (!channelUrl) {
     throw new AppError('channelUrl is required', 400);
   }
@@ -13,9 +13,9 @@ export const scan = asyncHandler(async (req: Request, res: Response) => {
 
   // KIỂM TRA LINK ĐỂ GỌI HÀM TƯƠNG ỨNG
   if (channelUrl.includes('tiktok.com')) {
-    result = await socialService.scanTikTokChannel(channelUrl, Number(minView) || 0);
+    result = await socialService.scanTikTokChannel(channelUrl, Number(minView) || 0, sessionId || 'default-session');
   } else if (channelUrl.includes('facebook.com') || channelUrl.includes('fb.com')) {
-    result = await socialService.scanFacebookPage(channelUrl, Number(minView) || 0);
+    result = await socialService.scanFacebookPage(channelUrl, Number(minView) || 0, sessionId || 'default-session');
   } else {
     throw new AppError('❌ Link không hợp lệ! Chỉ hỗ trợ TikTok hoặc Facebook.', 400);
   }

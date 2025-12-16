@@ -1,12 +1,13 @@
 import React, { useRef, useState } from 'react';
+import { UserMenu } from './UserMenu';
 
 import { NavLink, useLocation } from 'react-router-dom';
 
-import { 
+import {
 
-  LayoutDashboard, Users, Network, Fingerprint, Settings, 
+  LayoutDashboard, Users, Network, Fingerprint, Settings,
 
-  MonitorPlay, ListTodo, PlaySquare, Workflow, ShieldCheck, 
+  MonitorPlay, ListTodo, PlaySquare, Workflow, ShieldCheck,
 
   BarChart2, X, Menu, Clapperboard
 
@@ -22,91 +23,91 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
   const menuItems = [
 
-    { 
+    {
 
-      path: '/', 
+      path: '/',
 
-      name: 'Dashboard', 
+      name: 'Dashboard',
 
       icon: <LayoutDashboard size={20} className="text-blue-600" /> // Màu xanh dương
 
     },
 
-    { 
+    {
 
-      path: '/profiles', 
+      path: '/profiles',
 
-      name: 'Profiles', 
+      name: 'Profiles',
 
       icon: <Users size={20} className="text-indigo-600" /> // Xanh chàm
 
     },
 
-    { 
+    {
 
-      path: '/proxies', 
+      path: '/proxies',
 
-      name: 'Proxies', 
+      name: 'Proxies',
 
       icon: <Network size={20} className="text-cyan-600" /> // Xanh lơ
 
     },
 
-    { 
+    {
 
-      path: '/fingerprints', 
+      path: '/fingerprints',
 
-      name: 'Fingerprints', 
+      name: 'Fingerprints',
 
       icon: <Fingerprint size={20} className="text-teal-600" /> // Xanh ngọc
 
     },
 
-    { 
+    {
 
-      path: '/settings', 
+      path: '/settings',
 
-      name: 'Settings', 
+      name: 'Settings',
 
       icon: <Settings size={20} className="text-slate-600" /> // Xám
 
     },
 
-    { 
+    {
 
-      path: '/sessions', 
+      path: '/sessions',
 
-      name: 'Sessions', 
+      name: 'Sessions',
 
       icon: <MonitorPlay size={20} className="text-orange-500" /> // Cam
 
     },
 
-    { 
+    {
 
-      path: '/jobs', 
+      path: '/jobs',
 
-      name: 'Jobs', 
+      name: 'Jobs',
 
       icon: <ListTodo size={20} className="text-yellow-600" /> // Vàng đất
 
     },
 
-    { 
+    {
 
-      path: '/executions', 
+      path: '/executions',
 
-      name: 'Executions', 
+      name: 'Executions',
 
       icon: <PlaySquare size={20} className="text-red-500" /> // Đỏ
 
     },
 
-    { 
+    {
 
-      path: '/workflows', 
+      path: '/workflows',
 
-      name: 'Workflows', 
+      name: 'Workflows',
 
       icon: <Workflow size={20} className="text-pink-600" /> // Hồng
 
@@ -114,33 +115,33 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
     // --- 2 MỤC ĐẠI CA YÊU CẦU ---
 
-    { 
+    {
 
-      path: '/2fa', 
+      path: '/2fa',
 
-      name: 'Giải 2FA', 
+      name: 'Giải 2FA',
 
       icon: <ShieldCheck size={20} className="text-emerald-500" /> // Xanh lá bảo mật (Như hình cũ)
 
     },
 
-    { 
+    {
 
-      path: '/social-analytics', 
+      path: '/social-analytics',
 
-      name: 'Tool Phân Tích MXH', 
+      name: 'Tool Phân Tích MXH',
 
       icon: <BarChart2 size={20} className="text-violet-600" /> // Tím mộng mơ (Biểu đồ)
 
     },
 
-    { 
+    {
 
-      path: '/video-editor', 
+      path: '/video-editor',
 
-      name: 'Video Editor Studio', 
+      name: 'Video Editor Studio',
 
-      icon: <Clapperboard size={20} className="text-rose-500" /> 
+      icon: <Clapperboard size={20} className="text-rose-500" />
 
     },
 
@@ -172,7 +173,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
           <NavLink to="/" className="text-2xl font-bold text-black dark:text-white flex items-center gap-2 whitespace-nowrap">
 
-             🚀 NTG LOGIN
+            🚀 NTG LOGIN
 
           </NavLink>
 
@@ -200,35 +201,35 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
               {menuItems.map((item) => (
 
-                 <li key={item.path}>
+                <li key={item.path}>
 
-                   <NavLink
+                  <NavLink
 
-                     to={item.path}
+                    to={item.path}
 
-                     className={({ isActive }) =>
+                    className={({ isActive }) =>
 
-                       `group relative flex items-center gap-3 rounded-lg py-2.5 px-4 font-medium duration-200 ease-in-out
+                      `group relative flex items-center gap-3 rounded-lg py-2.5 px-4 font-medium duration-200 ease-in-out
 
-                       ${isActive 
+                       ${isActive
 
-                          ? 'bg-[#9BDBC3] text-black shadow-md' 
+                        ? 'bg-[#9BDBC3] text-black shadow-md'
 
-                          : 'text-gray-600 hover:bg-gray-100 hover:text-black'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-black'
 
-                       }`
+                      }`
 
-                     }
+                    }
 
-                   >
+                  >
 
-                     {item.icon}
+                    {item.icon}
 
-                     {item.name}
+                    {item.name}
 
-                   </NavLink>
+                  </NavLink>
 
-                 </li>
+                </li>
 
               ))}
 
@@ -289,13 +290,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
           {/* User Info / Avatar góc phải */}
 
           <div className="flex items-center gap-2">
-
-            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold">
-
-              A
-
-            </div>
-
+            <UserMenu />
           </div>
 
         </header>
@@ -306,7 +301,7 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
 
           <div className="max-w-full mx-auto">
 
-            {children} 
+            {children}
 
           </div>
 

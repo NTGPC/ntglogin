@@ -7,9 +7,17 @@ node_modules
 # Build output
 /dist
 /build
+backend/dist
 /generated/prisma
 *.js.map
 *.d.ts
+
+# Build logs
+build-error.txt
+build_log.txt
+full-log.txt
+builder.log
+react_build.log
 
 # Browser profiles - không nên commit lên git
 browser_profiles/

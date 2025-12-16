@@ -79,7 +79,7 @@ export const createSession = async (data: {
 
   let proxy = null;
   let validProxyId: number | null = null;
-  
+
   if (data.proxy_id) {
     proxy = await prisma.proxy.findUnique({
       where: { id: data.proxy_id },
@@ -97,12 +97,12 @@ export const createSession = async (data: {
     status: data.status || 'running',
     started_at: new Date(),
   };
-  
+
   // Only set proxy_id if we have a valid proxy
   if (validProxyId !== null) {
     sessionData.proxy_id = validProxyId;
   }
-  
+
   // Include meta if provided
   if (data.meta) {
     sessionData.meta = data.meta;
@@ -148,12 +148,12 @@ export const createSession = async (data: {
     // Build proxy config
     const proxyConfig = proxy
       ? {
-          host: proxy.host,
-          port: proxy.port,
-          username: proxy.username || undefined,
-          password: proxy.password || undefined,
-          type: proxy.type,
-        }
+        host: proxy.host,
+        port: proxy.port,
+        username: proxy.username || undefined,
+        password: proxy.password || undefined,
+        type: proxy.type,
+      }
       : undefined;
 
     const USE_PY_WORKER = String(process.env.USE_PY_WORKER || '').toLowerCase() === 'true';
@@ -229,26 +229,30 @@ export const createSession = async (data: {
         console.warn(`⚠️ [Session ${session.id}] Electron launch failed, falling back to Playwright:`, electronError.message)
         // Fallback to Playwright/Puppeteer
         const { launchBrowser } = await import('./browserService')
-        await launchBrowser({
-          profileId: enrichedProfile.id,
-          sessionId: session.id,
-          userAgent: enrichedProfile.user_agent || enrichedProfile.userAgent || undefined,
-          fingerprint: fingerprint,
-          proxy: proxyConfig,
-          profile: enrichedProfile, // Pass enriched profile (includes preset data)
-        })
+        await launchBrowser(
+          enrichedProfile,
+          null,
+          {
+            sessionId: session.id,
+            userAgent: enrichedProfile.user_agent || enrichedProfile.userAgent || undefined,
+            fingerprint: fingerprint,
+            proxy: proxyConfig,
+          }
+        )
       }
     } else {
       // Use Playwright/Puppeteer directly
       const { launchBrowser } = await import('./browserService')
-      await launchBrowser({
-        profileId: enrichedProfile.id,
-        sessionId: session.id,
-        userAgent: enrichedProfile.user_agent || enrichedProfile.userAgent || undefined,
-        fingerprint: fingerprint,
-        proxy: proxyConfig,
-        profile: enrichedProfile, // Pass enriched profile (includes preset data)
-      })
+      await launchBrowser(
+        enrichedProfile,
+        null,
+        {
+          sessionId: session.id,
+          userAgent: enrichedProfile.user_agent || enrichedProfile.userAgent || undefined,
+          fingerprint: fingerprint,
+          proxy: proxyConfig,
+        }
+      )
     }
 
     console.log(`✅ [Session ${session.id}] Browser launched successfully for profile ${profile.id}`);

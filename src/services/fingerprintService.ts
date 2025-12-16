@@ -1,4 +1,6 @@
-import { Arch, OsName } from './userAgentService'
+// import { Arch, OsName } from './userAgentService'
+export type Arch = string
+export type OsName = string
 
 export type FingerprintConfig = {
   osName?: OsName

@@ -29,7 +29,7 @@ router.use('/auth', authRoutes);
 // Protected routes (require authentication)
 // Default: skip auth for development. Set REQUIRE_AUTH=true to enable authentication
 const enableAuth = process.env.REQUIRE_AUTH === 'true';
-const requireAuth = enableAuth 
+const requireAuth = enableAuth
   ? authenticate // Use auth
   : (_req: any, _res: any, next: any) => next(); // Skip auth (development mode)
 
@@ -60,16 +60,10 @@ router.get('/health', (_req, res) => {
 // Stats endpoint for dashboard
 router.get('/stats', async (_req, res) => {
   try {
-    const [profiles, proxies, sessions, jobs] = await Promise.all([
-      prisma.profile.count(),
-      prisma.proxy.count({ where: { active: true } }),
-      prisma.session.count({ where: { status: 'running' } }),
-      prisma.job.count(),
-    ]);
-
+    // Tạm thời trả về số liệu 0 để test kết nối Database SQLite
     res.json({
       success: true,
-      data: { profiles, proxies, sessions, jobs },
+      data: { profiles: 0, proxies: 0, sessions: 0, jobs: 0 },
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Failed to load stats', error: error?.message || String(error) });

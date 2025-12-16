@@ -185,4 +185,3 @@ function closeProfileWindow(profileId) {
 function getProfileWindow(profileId) {
     return profileWindows.get(profileId);
 }
-//# sourceMappingURL=main.js.map

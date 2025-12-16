@@ -10,6 +10,9 @@ import { errorHandler } from './utils/errorHandler';
 import { loadGPUData } from './services/gpuService';
 import { loadUserAgentLibrary } from './services/userAgentLibraryService';
 
+import * as authController from './controllers/auth.controller';
+import { initAdminAccount } from './services/auth.service';
+
 // Load environment variables
 dotenv.config();
 
@@ -17,12 +20,15 @@ dotenv.config();
 loadGPUData();
 loadUserAgentLibrary();
 
+// Initialize Admin Account
+initAdminAccount();
+
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5175', 'http://127.0.0.1:5175', 'http://localhost:5177', 'http://127.0.0.1:5177'],
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5175', 'http://127.0.0.1:5175', 'http://localhost:5177', 'http://127.0.0.1:5177'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -42,6 +48,21 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Auth Routes
+// import * as authController from './controllers/auth.controller'; // REMOVE DUPLICATE
+import * as dashboardController from './controllers/dashboard.controller'; // Import mới
+
+app.post('/api/login', authController.login);
+app.get('/api/users', authController.getUsers);
+app.post('/api/users', authController.createUser);
+app.put('/api/users/:id', authController.updateUser);
+app.put('/api/users/:id/password', authController.resetPassword);
+app.delete('/api/users/:id', authController.deleteUser);
+
+// Dashboard Routes
+app.get('/api/dashboard/stats', dashboardController.getStats);
+
 
 // Routes
 app.use('/api', routes);
@@ -137,9 +158,9 @@ const io = new Server(httpServer, {
   cors: {
     // Cho phép cả localhost và 127.0.0.1 truy cập
     origin: [
-      "http://localhost:5173", 
-      "http://localhost:5175", 
-      "http://127.0.0.1:5173", 
+      "http://localhost:5173",
+      "http://localhost:5175",
+      "http://127.0.0.1:5173",
       "http://127.0.0.1:5175",
       "*" // Hoặc để dấu sao này là chấp hết mọi nguồn (Dễ chịu nhất khi dev)
     ],
@@ -152,7 +173,7 @@ const io = new Server(httpServer, {
 // Socket.io connection handler
 io.on('connection', (socket) => {
   console.log(`🔌 Client connected: ${socket.id}`);
-  
+
   socket.on('disconnect', () => {
     console.log(`🔌 Client disconnected: ${socket.id}`);
   });

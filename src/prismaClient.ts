@@ -1,4 +1,4 @@
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from '@prisma/client';
 
 // Singleton pattern for Prisma Client
 let prisma: PrismaClient;

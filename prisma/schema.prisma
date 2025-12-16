@@ -7,17 +7,19 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql" // Lưu ý: Nếu bạn dùng SQLite thì đổi lại thành "sqlite" và xóa env(), dùng file:./dev.db
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./data.db"
 }
 
 // User model for admin authentication
 model User {
-  id         Int      @id @default(autoincrement())
-  username   String   @unique
-  password   String // hashed password
-  role       String   @default("admin")
-  created_at DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String   // Mật khẩu đã mã hóa
+  fullName  String
+  avatar    String?  // <--- THÊM DÒNG NÀY (Lưu config avatar)
+  role      String   @default("USER") // "ADMIN" hoặc "USER"
+  createdAt DateTime @default(now())
 
   @@map("users")
 }
@@ -52,7 +54,7 @@ model FingerprintPreset {
   pixelRatio          Float     @default(1.0)
   
   // === LOCALIZATION ===
-  languages           String[]  @default(["en-US", "en"])
+  languages           String    @default("en-US,en")
   timezone            String?   
   
   // === SPOOFING MODES ===
@@ -153,7 +155,7 @@ model Profile {
   // === HARDWARE & GRAPHICS ===
   hardwareConcurrency Int      @default(8) 
   deviceMemory        Int      @default(8) 
-  languages           String[] @default(["en-US", "en"]) 
+  languages           String   @default("en-US,en") 
   
   // === DETERMINISTIC NOISE SEED ===
   fingerprintSeed     String   @default(uuid()) 
@@ -320,7 +322,7 @@ model JobExecution {
   started_at   DateTime?
   completed_at DateTime?
   result       Json?
-  error        String?   @db.Text
+  error        String?
   created_at   DateTime  @default(now())
 
   job      Job       @relation(fields: [job_id], references: [id], onDelete: Cascade)

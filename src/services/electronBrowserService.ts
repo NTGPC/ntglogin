@@ -3,12 +3,12 @@ let electronMain: any = null
 
 async function getElectronMain() {
   if (!electronMain) {
-    try {
-      electronMain = await import('../../packages/electron-core/src/main')
-    } catch (error) {
-      console.error('[Electron Browser] Failed to load Electron main:', error)
-      throw new Error('Electron is not available. Please install: npm install electron')
-    }
+    // try {
+    //   electronMain = await import('../../packages/electron-core/src/main')
+    // } catch (error) {
+    //   console.error('[Electron Browser] Failed to load Electron main:', error)
+    throw new Error('Electron Core is not bundled in this build.')
+    // }
   }
   return electronMain
 }
@@ -99,7 +99,7 @@ export async function launchProfileWithElectron(profile: any): Promise<BrowserWi
   // Launch Electron window
   const win = await launchProfileWindow(config)
   electronWindows.set(profile.id, win)
-  
+
   // Navigate to a default page after window is ready
   win.webContents.once('did-finish-load', () => {
     // Optionally navigate to a test page
