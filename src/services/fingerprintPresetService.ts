@@ -18,7 +18,7 @@ export interface CreateFingerprintPresetDto {
   screenHeight: number
   colorDepth: number
   pixelRatio: number
-  languages: string[]
+  languages: string[] | string
   timezone?: string
   canvasMode: string
   audioContextMode: string
@@ -32,7 +32,7 @@ export interface CreateFingerprintPresetDto {
   isActive?: boolean
 }
 
-export interface UpdateFingerprintPresetDto extends Partial<CreateFingerprintPresetDto> {}
+export interface UpdateFingerprintPresetDto extends Partial<CreateFingerprintPresetDto> { }
 
 export const getAllPresets = async () => {
   return prisma.fingerprintPreset.findMany({
@@ -67,14 +67,29 @@ export const getPresetsByOS = async (os: string) => {
 
 export const createPreset = async (data: CreateFingerprintPresetDto) => {
   return prisma.fingerprintPreset.create({
-    data,
+    data: {
+      ...data,
+      languages: Array.isArray(data.languages) ? data.languages.join(',') : data.languages,
+    },
   })
 }
 
 export const updatePreset = async (id: number, data: UpdateFingerprintPresetDto) => {
+  const { languages, ...rest } = data;
+  const updateData = {
+    ...rest,
+    ...(languages && Array.isArray(languages) ? { languages: languages.join(',') } : {}),
+  };
+
+  // Ép kiểu 'as any' để TypeScript không báo lỗi dòng này nữa
+  if (updateData.languages && Array.isArray(updateData.languages)) {
+    (updateData as any).languages = updateData.languages.join(',');
+  }
+
   return prisma.fingerprintPreset.update({
     where: { id },
-    data,
+    // Ép kiểu 'as any' cho toàn bộ cục updateData luôn cho nhanh
+    data: updateData as any,
   })
 }
 

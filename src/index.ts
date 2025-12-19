@@ -4,6 +4,8 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import fs from 'fs';
+import path from 'path';
 import routes from './routes';
 import editorRoutes from './routes/editorRoutes';
 import { errorHandler } from './utils/errorHandler';
@@ -52,6 +54,7 @@ app.use((req, res, next) => {
 // Auth Routes
 // import * as authController from './controllers/auth.controller'; // REMOVE DUPLICATE
 import * as dashboardController from './controllers/dashboard.controller'; // Import mới
+import * as autoReelsService from './services/autoReels.service';
 
 app.post('/api/login', authController.login);
 app.get('/api/users', authController.getUsers);
@@ -62,6 +65,156 @@ app.delete('/api/users/:id', authController.deleteUser);
 
 // Dashboard Routes
 app.get('/api/dashboard/stats', dashboardController.getStats);
+
+// Auto Reels Routes
+
+// 1. API Quét file MP4 trong thư mục
+app.post('/api/reels/scan-folder', (req, res) => {
+  const { folderPath } = req.body;
+  try {
+    if (!fs.existsSync(folderPath)) return res.status(400).json({ error: "Thư mục không tồn tại" });
+
+    const files = fs.readdirSync(folderPath)
+      .filter(file => file.toLowerCase().endsWith('.mp4'))
+      .map((file, index) => ({
+        id: index + 1,
+        name: file,
+        fullPath: path.join(folderPath, file),
+        status: 'Waiting'
+      }));
+    res.json({ files });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// API Lấy danh sách Font
+app.get('/api/reels/fonts', (req, res) => {
+  try {
+    let fontsDir = path.join(__dirname, '../../font'); // Thử folder không 's' trước
+    if (!fs.existsSync(fontsDir)) fontsDir = path.join(__dirname, '../../fonts'); // Thử có 's'
+
+    if (!fs.existsSync(fontsDir)) return res.json({ fonts: [] });
+
+    const files = fs.readdirSync(fontsDir)
+      .filter(file => file.endsWith('.ttf') || file.endsWith('.otf'))
+      .map(file => ({ name: file, path: path.join(fontsDir, file) }));
+    res.json({ fonts: files });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- API QUÉT ẢNH TRONG THƯ MỤC LOGO ---
+app.get('/api/reels/frames', (req, res) => {
+  try {
+    // Cố gắng tìm folder logo ở 2 vị trí:
+    // 1. Ngang hàng với thư mục backend (khi chạy dev)
+    // 2. Ở thư mục gốc dự án
+
+    let logosDir = path.join(__dirname, '../../logo'); // Thử ra ngoài 2 cấp
+
+    // Nếu không thấy, thử tìm ở gốc ổ đĩa (D:\NTGLOGIN\logo)
+    // Mẹo: Dùng process.cwd() để lấy thư mục gốc nơi chạy lệnh npm run web
+    if (!fs.existsSync(logosDir)) {
+      logosDir = path.join(process.cwd(), 'logo');
+    }
+
+    console.log("Đang quét logo tại:", logosDir); // Log ra để debug
+
+    if (!fs.existsSync(logosDir)) {
+      // Tự tạo folder logo nếu chưa có
+      fs.mkdirSync(logosDir, { recursive: true });
+      return res.json({ frames: [] });
+    }
+
+    const files = fs.readdirSync(logosDir)
+      .filter(file => file.toLowerCase().endsWith('.png'))
+      .map(file => ({
+        name: file,
+        path: path.join(logosDir, file)
+      }));
+    res.json({ frames: files });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Biến toàn cục lưu tiến độ
+let renderProgress = 0;
+
+// 2. API Render Nâng Cao (Single video - giữ lại cho tương thích)
+app.post('/api/reels/render', async (req, res) => {
+  const { videoPath, framePath, text, outputDir, style } = req.body;
+  try {
+    console.log("Đang render:", videoPath);
+    renderProgress = 0; // Reset
+    const result = await autoReelsService.renderReel(
+      videoPath, framePath, text, outputDir || 'D:\\NTGLOGIN\\release', style,
+      (percent) => { renderProgress = percent; } // Cập nhật tiến độ
+    );
+    res.json({ success: true, path: result });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 3. API Batch Render (Multiple videos)
+app.post('/api/reels/start-render', async (req, res) => {
+  const { videos, outputDir, useTitle, style } = req.body;
+  const pngDir = path.join(process.cwd(), 'png');
+  const titleDir = path.join(process.cwd(), 'title');
+
+  // Trả về ngay để UI không bị treo
+  res.json({ success: true, message: "Started" });
+
+  try {
+    renderProgress = 0;
+    let completed = 0;
+
+    for (const v of videos) {
+      let outName = v.name;
+      // Đọc tên từ file txt title nếu có
+      if (fs.existsSync(path.join(titleDir, `${v.id}.txt`))) {
+        outName = fs.readFileSync(path.join(titleDir, `${v.id}.txt`), 'utf-8');
+      }
+
+      let overlayPath = path.join(pngDir, `${v.id}.png`);
+      // Nếu không dùng title hoặc file png chưa tạo -> bỏ qua overlay
+      if (!useTitle || !fs.existsSync(overlayPath)) overlayPath = '';
+
+      try {
+        // Gọi hàm render mới - FIX: use v.fullPath not v.path
+        await autoReelsService.renderFinalVideo(
+          v.fullPath, overlayPath, outputDir || 'D:\\render_output', outName, style,
+          (percent) => {
+            // Tính % tổng
+            const currentTotal = ((completed * 100) + percent) / videos.length;
+            renderProgress = Math.min(Math.round(currentTotal), 99);
+          }
+        );
+      } catch (err) {
+        console.error(`Lỗi render video ${v.name}:`, err);
+        // Vẫn tiếp tục video sau, không dừng hẳn
+      }
+
+      completed++;
+      renderProgress = Math.round((completed / videos.length) * 100);
+    }
+    renderProgress = 100; // Xong
+  } catch (e: any) {
+    console.error("Lỗi hệ thống:", e);
+    renderProgress = -1; // Báo lỗi Fatal
+  }
+});
+
+// API lấy tiến độ (Frontend sẽ gọi liên tục cái này)
+app.get('/api/reels/progress', (req, res) => {
+  res.json({ progress: renderProgress });
+});
+
 
 
 // Routes

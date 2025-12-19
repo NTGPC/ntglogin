@@ -9,7 +9,7 @@ import {
 
   MonitorPlay, ListTodo, PlaySquare, Workflow, ShieldCheck,
 
-  BarChart2, X, Menu, Clapperboard
+  BarChart2, X, Menu, Clapperboard, Smartphone
 
 } from 'lucide-react';
 
@@ -142,6 +142,16 @@ export default function Sidebar({ children }: { children: React.ReactNode }) {
       name: 'Video Editor Studio',
 
       icon: <Clapperboard size={20} className="text-rose-500" />
+
+    },
+
+    {
+
+      path: '/edit-ratio',
+
+      name: 'Edit Ratio Video',
+
+      icon: <Smartphone size={20} className="text-teal-600" />
 
     },
 

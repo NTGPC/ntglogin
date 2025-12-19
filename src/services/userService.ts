@@ -1,12 +1,13 @@
 import prisma from '../prismaClient';
 import { hashPassword, comparePassword } from '../utils/auth';
 
-export const createUser = async (username: string, password: string, role: string = 'admin') => {
+export const createUser = async (username: string, password: string, fullName: string, role: string = 'USER') => {
   const hashedPassword = await hashPassword(password);
   return prisma.user.create({
     data: {
       username,
       password: hashedPassword,
+      fullName,
       role,
     },
   });
@@ -24,7 +25,7 @@ export const getAllUsers = async () => {
       id: true,
       username: true,
       role: true,
-      created_at: true,
+      createdAt: true,
       // Don't return password
     },
   });

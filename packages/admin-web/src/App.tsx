@@ -16,6 +16,7 @@ import ProfileEditor from './components/ProfileEditor/ProfileEditor.jsx'
 import TwoFAPage from './pages/TwoFAPage'
 import SocialAnalyticsPage from './pages/SocialAnalyticsPage'
 import VideoEditorPage from './pages/VideoEditorPage'
+import EditRatioVideo from './pages/EditRatioVideo'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import UserManagement from './pages/UserManagement'
@@ -52,6 +53,7 @@ function App() {
             <Route path="2fa" element={<TwoFAPage />} />
             <Route path="social-analytics" element={<SocialAnalyticsPage />} />
             <Route path="video-editor" element={<VideoEditorPage />} />
+            <Route path="edit-ratio" element={<EditRatioVideo />} />
             <Route path="users" element={<UserManagement />} />
           </Route>
         </Routes>
