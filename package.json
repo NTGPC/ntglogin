@@ -1,7 +1,7 @@
 {
   "name": "ntg-login-tool",
   "version": "1.0.2",
-  "main": "electron.js",
+  "main": "main.js",
   "description": "Tool nuôi nick & Edit video tự động",
   "author": "NTG Team",
   "scripts": {

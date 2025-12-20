@@ -8,6 +8,8 @@ node_modules
 /dist
 /build
 backend/dist
+release/
+title/
 /generated/prisma
 *.js.map
 *.d.ts

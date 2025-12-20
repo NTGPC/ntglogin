@@ -6,6 +6,7 @@
     "rootDir": "./src",
     "strict": false,
     "esModuleInterop": true,
+    "jsx": "react-jsx",
     "skipLibCheck": true,
     "typeRoots": [
       "./node_modules/@types"
