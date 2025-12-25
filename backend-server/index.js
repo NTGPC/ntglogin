@@ -7,9 +7,11 @@ const app = express();
 const prisma = new PrismaClient();
 
 app.use(cors()); // Cho phép Web và App gọi vào
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Tăng giới hạn để nhận JSON to (Workflow/Profile)
 
-// --- API AUTH ---
+// ==========================================
+// 1. API AUTH & USERS
+// ==========================================
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -21,15 +23,14 @@ app.post('/api/auth/login', async (req, res) => {
 
         const { password: _, ...userInfo } = user;
         res.json({ success: true, user: userInfo });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- API USER ---
 app.get('/api/users', async (req, res) => {
-    const users = await prisma.user.findMany();
-    res.json({ success: true, data: users });
+    try {
+        const users = await prisma.user.findMany();
+        res.json({ success: true, data: users });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/users', async (req, res) => {
@@ -46,62 +47,144 @@ app.post('/api/users', async (req, res) => {
             }
         });
         res.json({ success: true, data: newUser });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==========================================
+// 2. API PROFILES (Đã bổ sung Create/Delete)
+// ==========================================
+app.get('/api/profiles', async (req, res) => {
+    try {
+        const profiles = await prisma.profile.findMany({ orderBy: { createdAt: 'desc' } });
+        res.json({ success: true, data: profiles });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        console.error("Lỗi lấy profile:", e.message);
+        res.json({ success: true, data: [] });
     }
 });
 
-// --- API WORKFLOWS ---
+app.post('/api/profiles', async (req, res) => {
+    const { name, userAgent, config, proxy } = req.body;
+    try {
+        const newProfile = await prisma.profile.create({
+            data: {
+                name,
+                userAgent: userAgent || '',
+                rawProxy: proxy || '',
+                avatar: config || '{}' // Lưu config fingerprint vào cột avatar (hoặc config tùy DB)
+            }
+        });
+        res.json({ success: true, data: newProfile });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-// 1. Lấy danh sách
+app.delete('/api/profiles/:id', async (req, res) => {
+    try {
+        await prisma.profile.delete({ where: { id: Number(req.params.id) } });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==========================================
+// 3. API WORKFLOWS
+// ==========================================
 app.get('/api/workflows', async (req, res) => {
     try {
         const workflows = await prisma.workflow.findMany({ orderBy: { updatedAt: 'desc' } });
         res.json({ success: true, data: workflows });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. Tạo mới / Cập nhật
 app.post('/api/workflows', async (req, res) => {
     const { id, name, nodes, edges } = req.body;
     try {
-        // Chuyển object sang string để lưu vào DB
         const nodesStr = JSON.stringify(nodes);
         const edgesStr = JSON.stringify(edges);
 
         let workflow;
         if (id) {
-            // Update nếu có ID
             workflow = await prisma.workflow.update({
                 where: { id: Number(id) },
                 data: { name, nodes: nodesStr, edges: edgesStr }
             });
         } else {
-            // Create mới
             workflow = await prisma.workflow.create({
                 data: { name, nodes: nodesStr, edges: edgesStr }
             });
         }
         res.json({ success: true, data: workflow });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 3. Xóa
 app.delete('/api/workflows/:id', async (req, res) => {
     try {
         await prisma.workflow.delete({ where: { id: Number(req.params.id) } });
         res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// --- KHỞI CHẠY SERVER ---
-const PORT = 4000; // Chạy cổng 4000 để không đụng cổng 3000 cũ
+// ==========================================
+// 4. API SUPPER FANPAGE (CAMPAIGNS)
+// ==========================================
+app.get('/api/campaigns', async (req, res) => {
+    try {
+        const campaigns = await prisma.campaign.findMany({
+            include: { sources: true, destinations: true, tasks: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json({ success: true, data: campaigns });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns', async (req, res) => {
+    const { name, backfillMode, sources, destinations } = req.body;
+    try {
+        const campaign = await prisma.campaign.create({
+            data: {
+                name,
+                backfillMode,
+                sources: { create: sources.map(s => ({ url: s.url, platform: s.platform })) },
+                destinations: { create: destinations.map(d => ({ profileId: d.profileId, pageUrl: d.pageUrl })) }
+            }
+        });
+        res.json({ success: true, data: campaign });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, name } = req.body;
+    try {
+        const updated = await prisma.campaign.update({
+            where: { id: Number(id) },
+            data: {
+                ...(status && { status }),
+                ...(name && { name })
+            }
+        });
+        res.json({ success: true, data: updated });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:id', async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        // Xóa các bảng con trước
+        await prisma.contentSource.deleteMany({ where: { campaignId: id } });
+        await prisma.contentDestination.deleteMany({ where: { campaignId: id } });
+        await prisma.contentTask.deleteMany({ where: { campaignId: id } });
+
+        await prisma.campaign.delete({ where: { id: id } });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==========================================
+// START SERVER
+// ==========================================
+app.get('/api/test', (req, res) => res.send('SERVER NGON LANH!'));
+
+const PORT = 4000;
 app.listen(PORT, () => {
     console.log(`✅ API Server đang chạy tại: http://localhost:${PORT}`);
 });

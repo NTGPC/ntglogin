@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Users, Network, Fingerprint, Settings, MonitorPlay,
     ListTodo, PlaySquare, GitFork, ShieldCheck, BarChart2, Clapperboard,
-    Smartphone, LogOut, UserCog, Menu
+    Smartphone, LogOut, UserCog, Menu, Rocket
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -94,6 +94,10 @@ const Sidebar = ({ collapsed, toggleSidebar }: SidebarProps) => {
 
                 <NavLink to="/dashboard/video-editor" className={navItemClass} title="Video Editor Studio">
                     <Clapperboard size={20} /> {!collapsed && <span>Video Editor Studio</span>}
+                </NavLink>
+
+                <NavLink to="/dashboard/supper-fanpage" className={navItemClass} title="Supper Fanpage">
+                    <Rocket size={20} /> {!collapsed && <span>Supper Fanpage</span>}
                 </NavLink>
 
                 {/* NATIVE TOOLS */}

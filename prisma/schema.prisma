@@ -451,3 +451,50 @@ model VideoEditorProject {
 
   @@map("video_editor_projects")
 }
+
+// --- MODULE SUPPER FANPAGE ---
+
+model Campaign {
+  id           Int      @id @default(autoincrement())
+  name         String
+  status       String   @default("ACTIVE") // ACTIVE, PAUSED
+  backfillMode Boolean  @default(false)    // Chế độ lấy video cũ
+  createdAt    DateTime @default(now())
+  
+  sources      ContentSource[]
+  destinations ContentDestination[]
+  tasks        ContentTask[]
+}
+
+model ContentSource {
+  id          Int      @id @default(autoincrement())
+  url         String   // Link kênh Youtube/Facebook/Tiktok
+  platform    String   // YOUTUBE, FACEBOOK, TIKTOK
+  campaignId  Int
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model ContentDestination {
+  id          Int      @id @default(autoincrement())
+  profileId   Int      // ID của Profile trong bảng User/Profile
+  pageUrl     String   // Link Fanpage đích
+  campaignId  Int
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model ContentTask {
+  id           Int      @id @default(autoincrement())
+  campaignId   Int
+  campaign     Campaign @relation(fields: [campaignId], references: [id])
+  
+  videoUrl     String   // Link video gốc
+  videoTitle   String?
+  localPath    String?  // Đường dẫn file tải về
+  renderedPath String?  // Đường dẫn file sau render
+  
+  status       String   @default("PENDING") // PENDING, DOWNLOADED, RENDERED, UPLOADED, ERROR
+  logs         String?  // Ghi lỗi nếu có
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

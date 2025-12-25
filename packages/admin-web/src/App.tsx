@@ -29,6 +29,7 @@ import Workflows from './pages/Workflows';
 import TwoFAPage from './pages/TwoFAPage';
 import SocialAnalyticsPage from './pages/SocialAnalyticsPage';
 import VideoEditorPage from './pages/VideoEditorPage';
+import SupperFanpage from './pages/SupperFanpage';
 
 // Component bảo vệ
 const PrivateRoute = ({ children }: { children: any }) => {
@@ -66,6 +67,7 @@ function App() {
           <Route path="2fa" element={<TwoFAPage />} />
           <Route path="social-analytics" element={<SocialAnalyticsPage />} />
           <Route path="video-editor" element={<VideoEditorPage />} />
+          <Route path="supper-fanpage" element={<SupperFanpage />} />
           <Route path="edit-ratio" element={<EditRatio />} />
           <Route path="users" element={<UserManagement />} />
         </Route>
