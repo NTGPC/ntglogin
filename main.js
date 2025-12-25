@@ -344,3 +344,59 @@ ipcMain.handle('auth:login', async (event, { username, password }) => {
     return { success: true, user: userInfo };
   } catch (e) { return { success: false, error: e.message }; }
 });
+
+
+// =========================================================
+// 4. MODULE PROFILES (QUẢN LÝ PROFILE TRÌNH DUYỆT)
+// =========================================================
+
+// A. Lấy danh sách Profile
+ipcMain.handle('profile:getAll', async () => {
+  try {
+    const db = await getPrisma();
+    // Giả sử bảng tên là 'profile', nếu DB bạn tên là 'BrowserProfile' thì sửa lại nhé
+    const profiles = await db.profile.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    return { success: true, data: profiles };
+  } catch (e) {
+    console.error('[DB] Get Profiles Error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// B. Tạo Profile Mới
+ipcMain.handle('profile:create', async (event, profileData) => {
+  try {
+    const db = await getPrisma();
+
+    // Lưu vào DB
+    // Lưu ý: Prisma yêu cầu đúng tên cột. Tôi đang giả định các cột cơ bản.
+    const newProfile = await db.profile.create({
+      data: {
+        name: profileData.name || 'New Profile',
+        rawProxy: profileData.proxy || '',
+        // UserAgent và Fingerprint lưu dạng JSON string nếu DB không hỗ trợ Json native
+        userAgent: profileData.userAgent || '',
+        // Các trường khác tùy vào schema.prisma của bạn
+        // Nếu bảng profile của bạn đơn giản, chỉ cần name và proxy là đủ test
+      }
+    });
+
+    return { success: true, data: newProfile };
+  } catch (e) {
+    console.error('[DB] Create Profile Error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// C. Xóa Profile
+ipcMain.handle('profile:delete', async (event, id) => {
+  try {
+    const db = await getPrisma();
+    await db.profile.delete({ where: { id: Number(id) } });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});

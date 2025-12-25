@@ -1,8 +1,8 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { createCanvas, registerFont } = require('canvas');
+const { createCanvas, registerFont, loadImage } = require('canvas');
 
 // Xác định môi trường
 const isDev = !app.isPackaged;
@@ -45,78 +45,75 @@ const startBackend = () => {
 // Gọi hàm khởi động ngay lập tức
 startBackend();
 
-// --- HÀM TẠO ẢNH PNG TỪ TEXT (CANVAS) ---
-function generateOverlayImage(text, fontName, color, outputPath) {
-    try {
-        // Tạo canvas với kích thước 1080x1920 (9:16)
-        const canvas = createCanvas(1080, 1920);
-        const ctx = canvas.getContext('2d');
+// --- HELPER FUNCTIONS ---
 
-        // Nền trong suốt
-        ctx.clearRect(0, 0, 1080, 1920);
-
-        // Cấu hình font
-        const fontSize = 80;
-        const fontPath = path.join(__dirname, 'font', `${fontName}.ttf`);
-
-        // Đăng ký font nếu tồn tại, nếu không dùng font mặc định
-        if (fs.existsSync(fontPath)) {
-            registerFont(fontPath, { family: fontName });
-            ctx.font = `bold ${fontSize}px "${fontName}"`;
-        } else {
-            ctx.font = `bold ${fontSize}px Arial`;
-        }
-
-        ctx.fillStyle = color;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        // Vẽ text ở giữa màn hình
-        const x = 1080 / 2;
-        const y = 1920 / 2;
-
-        // Wrap text nếu quá dài
-        const maxWidth = 1000;
-        const words = text.split(' ');
-        let line = '';
-        let lines = [];
-
-        for (let word of words) {
-            const testLine = line + word + ' ';
-            const metrics = ctx.measureText(testLine);
-            if (metrics.width > maxWidth && line !== '') {
-                lines.push(line);
-                line = word + ' ';
-            } else {
-                line = testLine;
-            }
-        }
-        lines.push(line);
-
-        // Vẽ từng dòng
-        const lineHeight = fontSize * 1.2;
-        const startY = y - ((lines.length - 1) * lineHeight) / 2;
-
-        lines.forEach((line, i) => {
-            ctx.fillText(line.trim(), x, startY + (i * lineHeight));
-        });
-
-        // Lưu file PNG
-        const buffer = canvas.toBuffer('image/png');
-        fs.writeFileSync(outputPath, buffer);
-
-        console.log(`[Canvas] Đã tạo overlay image: ${outputPath}`);
-        return true;
-    } catch (error) {
-        console.error('[Canvas] Lỗi khi tạo overlay image:', error);
-        return false;
+function clean_title_text(text, rm_spaces = true, rm_hashtag = true, del_chars = "", prefix = "", suffix = "") {
+    // 1. Xóa Hashtag (#Word)
+    if (rm_hashtag) {
+        text = text.replace(/#\S+/g, "");
     }
+
+    // 2. Xóa ký tự tùy chọn
+    if (del_chars) {
+        // Tách các cụm từ cần xóa (ví dụ nhập: @* | . =)
+        const tokens = del_chars.split(' '); // Tách bằng khoảng trắng như Python split()
+        tokens.forEach(token => {
+            if (token.includes('*')) {
+                // Xóa wildcard (ví dụ @*)
+                // Escape special regex chars except *
+                const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '');
+                // Regex: token_prefix + non-whitespace characters
+                const regex = new RegExp(escaped + "\\S*", "g");
+                text = text.replace(regex, "");
+            } else {
+                // Xóa ký tự thường
+                text = text.split(token).join("");
+            }
+        });
+    }
+
+    // 3. Thay thế em dash (—) thành hyphen (-)
+    text = text.replace(/—/g, "-");
+
+    // 4. Xóa khoảng trắng thừa
+    if (rm_spaces) {
+        text = text.replace(/\s+/g, " ").trim();
+    }
+
+    // 5. Thêm tiền tố / hậu tố
+    return `${prefix}${text}${suffix}`;
 }
 
 // --- IPC HANDLERS ---
 
+// 0. DIALOG HANDLERS
+ipcMain.handle('dialog:openFolder', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+        properties: ['openDirectory']
+    });
+    if (canceled) {
+        return null;
+    } else {
+        return filePaths[0];
+    }
+});
+
+ipcMain.handle('dialog:openFile', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+            { name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }
+        ]
+    });
+    if (canceled) {
+        return null;
+    } else {
+        return filePaths[0];
+    }
+});
+
 // 1. XỬ LÝ SCAN FOLDER
-ipcMain.handle('video:scan-folder', async (event, folderPath) => {
+ipcMain.handle('video:scan', async (event, folderPath) => {
     try {
         if (!fs.existsSync(folderPath)) {
             return { success: false, error: 'Thư mục không tồn tại' };
@@ -129,67 +126,272 @@ ipcMain.handle('video:scan-folder', async (event, folderPath) => {
             return ['.mp4', '.mov', '.avi', '.mkv', '.webm'].includes(ext);
         });
 
-        return { success: true, data: videos };
+        // Trả về mảng object chi tiết hơn
+        const videoList = videos.map((file, idx) => ({
+            id: String(idx + 1).padStart(4, '0'),
+            name: file,
+            path: path.join(folderPath, file),
+            clean_name: path.parse(file).name
+        }));
+
+        return videoList; // Trả về trực tiếp mảng
     } catch (error) {
         console.error('[IPC] Lỗi scan folder:', error);
+        return [];
+    }
+});
+
+// 2. XỬ LÝ TITLE
+ipcMain.handle('video:processTitle', async (event, config) => {
+    try {
+        const { videoPath, removeSpaces, removeHashtag, deleteChars, prefix, suffix } = config;
+        const fileName = path.basename(videoPath);
+        const nameOnly = path.parse(fileName).name;
+
+        // Xử lý logic clean text
+        const newTitle = clean_title_text(nameOnly, removeSpaces, removeHashtag, deleteChars, prefix, suffix);
+
+        // Tạo thư mục title nếu chưa có
+        const titleDir = path.join(app.getPath('userData'), 'title');
+        if (!fs.existsSync(titleDir)) fs.mkdirSync(titleDir, { recursive: true });
+
+        // Lưu file txt (dùng hash hoặc tên gốc để định danh)
+        // Ở đây ta trả về đường dẫn txt để frontend lưu/quản lý
+        const txtPath = path.join(titleDir, `${newTitle}.txt`); // Hoặc dùng ID video nếu có
+        fs.writeFileSync(txtPath, newTitle, 'utf-8');
+
+        // Logic rename file gốc (nếu cần)? 
+        // Trong AutoRender python, nó logic rename file output. Ở đây frontend EditRatio có vẻ muốn rename ngay hoặc chỉ lấy kết quả.
+        // EditRatio.tsx dòng 106: newVideos.push({ ...vid, name: res.newName, ... })
+        // Vậy trả về newName
+
+        return { success: true, newName: newTitle, txtPath };
+    } catch (error) {
+        console.error('[IPC] Lỗi process title:', error);
         return { success: false, error: error.message };
     }
 });
 
-// 2. XỬ LÝ RENDER (CORE LOGIC)
-ipcMain.on('video:start-render', async (event, config) => {
-    const { fileName, folderPath, overlayText, fontName, color, options } = config;
-    const inputPath = path.join(folderPath, fileName);
+// 2.5 LẤY DANH SÁCH FONTS
+ipcMain.handle('video:getFonts', async () => {
+    try {
+        const fontDir = path.join(__dirname, 'font');
+        if (!fs.existsSync(fontDir)) {
+            fs.mkdirSync(fontDir, { recursive: true });
+            return [];
+        }
+        const files = fs.readdirSync(fontDir);
+        const fonts = files.filter(f => f.toLowerCase().endsWith('.ttf') || f.toLowerCase().endsWith('.otf'));
+        return fonts;
+    } catch (error) {
+        console.error('[IPC] Lỗi get fonts:', error);
+        return [];
+    }
+});
+
+// 3. XỬ LÝ RENDER (CORE LOGIC)
+
+// --- HÀM TẠO ẢNH PNG TỪ TEXT (CANVAS - ADVANCED) ---
+async function generateOverlayImage(text, fontName, color, outputPath, bgPath, options = {}) {
+    try {
+        const {
+            width = 1080,
+            height = 1920,
+            fontSize = 80,
+            borderInfo = { color: '#000000', size: 0 },
+            isUpperCase = false,
+            isFirstLetter = false,
+            boxCoords = [75, 330, 1005, 570] // Default coords from Python code
+        } = options;
+
+        // 1. Text Transformation
+        if (isUpperCase) {
+            text = text.toUpperCase();
+        } else if (isFirstLetter) {
+            // Capitalize first letter of each word
+            text = text.toLowerCase().replace(/(?:^|\s)\S/g, function (a) { return a.toUpperCase(); });
+        }
+
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        // Clear & Load Background
+        ctx.clearRect(0, 0, width, height);
+
+        if (bgPath && fs.existsSync(bgPath)) {
+            try {
+                const bgImage = await loadImage(bgPath);
+                ctx.drawImage(bgImage, 0, 0, width, height);
+            } catch (err) {
+                console.warn('[Canvas] Could not load background image:', err);
+            }
+        }
+
+        // Font
+        const fontPath = path.join(__dirname, 'font', `${fontName}.ttf`);
+        // Fallback or load
+        if (fs.existsSync(fontPath)) {
+            // Register font with a family name matching the filename or custom
+            registerFont(fontPath, { family: fontName });
+            ctx.font = `bold ${fontSize}px "${fontName}"`;
+        } else {
+            ctx.font = `bold ${fontSize}px Arial`;
+        }
+
+        // Setup Box
+        const [x1, y1, x2, y2] = boxCoords;
+        const boxWidth = x2 - x1;
+        const boxHeight = y2 - y1;
+
+        // Word Wrap Logic (Max 3 lines)
+        const words = text.split(' ');
+        const lines = [];
+        let currentLine = words[0];
+
+        for (let i = 1; i < words.length; i++) {
+            const word = words[i];
+            const width = ctx.measureText(currentLine + " " + word).width;
+            if (width < boxWidth) {
+                currentLine += " " + word;
+            } else {
+                lines.push(currentLine);
+                currentLine = word;
+            }
+        }
+        lines.push(currentLine);
+
+        // Truncate to max 3 lines with ellipsis
+        const MAX_LINES = 3;
+        if (lines.length > MAX_LINES) {
+            const lastLineIndex = MAX_LINES - 1;
+            lines.length = MAX_LINES; // Cut off extra lines
+
+            // Add ellipsis to last line logic could be complex, simple approach:
+            let lastLine = lines[lastLineIndex];
+            while (ctx.measureText(lastLine + "...").width > boxWidth && lastLine.length > 0) {
+                lastLine = lastLine.slice(0, -1);
+            }
+            lines[lastLineIndex] = lastLine + "...";
+        }
+
+        // Vertical Center
+        // Estimate line height ~ fontSize * 1.2
+        const lineHeight = fontSize * 1.2;
+        const totalTextHeight = lines.length * lineHeight;
+        const startY = y1 + (boxHeight - totalTextHeight) / 2 + (fontSize / 2); // approximate baseline
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const centerX = x1 + boxWidth / 2;
+
+        const borderSize = Number(borderInfo.size || 0);
+        const borderColor = borderInfo.color || '#000000';
+
+        lines.forEach((line, i) => {
+            const y = startY + i * lineHeight;
+
+            // Border (Stroke simulation)
+            if (borderSize > 0) {
+                ctx.lineWidth = borderSize * 2; // Stroke is centered, so double width
+                ctx.strokeStyle = borderColor;
+                ctx.strokeText(line, centerX, y);
+            }
+
+            // Fill
+            ctx.fillStyle = color;
+            ctx.fillText(line, centerX, y);
+        });
+
+        // Save
+        const buffer = canvas.toBuffer('image/png');
+        fs.writeFileSync(outputPath, buffer);
+
+        console.log(`[Canvas] Created overlay: ${outputPath}`);
+        return true;
+    } catch (error) {
+        console.error('[Canvas] Error:', error);
+        return false;
+    }
+}
+
+// 3. TẠO PNG (HANDLER)
+ipcMain.handle('video:createPng', async (event, config) => {
+    try {
+        const { txtPath, bgPath, fontName, color, size, borderInfo, isUpperCase, isFirstLetter } = config;
+
+        // Đọc text từ file txt
+        if (!fs.existsSync(txtPath)) throw new Error("File TXT không tồn tại");
+        const text = fs.readFileSync(txtPath, 'utf-8').trim();
+
+        // Output path (cùng tên với txt nhưng đuôi png)
+        const outputDir = path.join(app.getPath('userData'), 'png');
+        if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+        const fileName = path.parse(txtPath).name;
+        const outputPath = path.join(outputDir, `${fileName}.png`);
+
+        // Gọi hàm tạo ảnh
+        const success = await generateOverlayImage(text, fontName, color, outputPath, bgPath, {
+            fontSize: size,
+            borderInfo,
+            isUpperCase,
+            isFirstLetter
+        });
+
+        if (success) {
+            return { success: true, pngPath: outputPath };
+        } else {
+            return { success: false, error: "Lỗi tạo ảnh Canvas" };
+        }
+    } catch (error) {
+        console.error('[IPC] Lỗi create png:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// 4. XỬ LÝ RENDER (CORE LOGIC)
+ipcMain.on('video:render', async (event, config) => {
+    const { videoPath, pngPath, outputFolder } = config;
+    const fileName = path.basename(videoPath);
 
     // Tạo output folder nếu chưa có
-    if (!fs.existsSync(OUTPUT_FOLDER)) {
-        fs.mkdirSync(OUTPUT_FOLDER, { recursive: true });
+    if (!fs.existsSync(outputFolder)) {
+        fs.mkdirSync(outputFolder, { recursive: true });
     }
 
-    const outputPath = path.join(OUTPUT_FOLDER, `edited_${fileName}`);
-
+    // Tên file output? Thường dùng tên file gốc
+    const outputPath = path.join(outputFolder, fileName);
     console.log(`[Main] Bắt đầu render: ${fileName}`);
 
-    // --- BƯỚC A: TẠO ẢNH PNG TỪ TEXT ---
-    const tempPngPath = path.join(app.getPath('userData'), 'temp_overlay.png');
-    const overlayCreated = generateOverlayImage(
-        overlayText || 'Demo Title',
-        fontName || 'Arial',
-        color || '#FFFFFF',
-        tempPngPath
-    );
-
-    if (!overlayCreated) {
-        event.sender.send('video:error', {
-            fileName,
-            error: 'Không thể tạo overlay image'
-        });
-        return;
-    }
-
-    // --- BƯỚC B: GỌI FFMPEG ---
-    // Kiểm tra FFmpeg có tồn tại không
+    // Kiểm tra FFmpeg
     if (!fs.existsSync(FFMPEG_PATH)) {
-        console.error(`[FFmpeg] Không tìm thấy FFmpeg tại: ${FFMPEG_PATH}`);
-        event.sender.send('video:error', {
-            fileName,
-            error: `FFmpeg không tồn tại tại ${FFMPEG_PATH}`
-        });
+        event.sender.send('video:error', { fileName, error: `FFmpeg không tồn tại tại ${FFMPEG_PATH}` });
         return;
     }
 
-    // Logic: Resize 9:16 (1080x1920) + Overlay PNG
+    // Logic Args (Ported from Python)
     const args = [
-        '-y', // Ghi đè file nếu tồn tại
-        '-i', inputPath, // Input video
-        '-i', tempPngPath, // Input ảnh overlay
-        '-filter_complex',
-        '[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];[bg][1:v]overlay=0:0',
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast', // Tốc độ cao nhất
-        '-c:a', 'copy', // Copy audio
-        outputPath
+        '-y',
+        '-i', videoPath
     ];
+
+    let filterComplex = "";
+    if (pngPath && fs.existsSync(pngPath)) {
+        args.push('-i', pngPath);
+        filterComplex = "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2[bg];[bg][1:v]overlay=0:0";
+    } else {
+        filterComplex = "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
+    }
+
+    args.push(
+        '-filter_complex', filterComplex,
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        outputPath
+    );
 
     console.log(`[FFmpeg] Executing: ${FFMPEG_PATH} ${args.join(' ')}`);
 
@@ -206,7 +408,6 @@ ipcMain.on('video:start-render', async (event, config) => {
             const parts = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})/);
             if (parts) {
                 duration = parseInt(parts[1]) * 3600 + parseInt(parts[2]) * 60 + parseInt(parts[3]);
-                console.log(`[FFmpeg] Duration detected: ${duration}s`);
             }
         }
 
@@ -225,12 +426,6 @@ ipcMain.on('video:start-render', async (event, config) => {
 
     ffmpeg.on('close', (code) => {
         console.log(`[Main] Render xong. Code: ${code}`);
-
-        // Xóa file temp
-        if (fs.existsSync(tempPngPath)) {
-            fs.unlinkSync(tempPngPath);
-        }
-
         if (code === 0) {
             event.sender.send('video:complete', { fileName, path: outputPath, code });
         } else {

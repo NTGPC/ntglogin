@@ -186,7 +186,7 @@ const EditRatio = () => {
                             onClick={handleBrowseFolder}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium flex items-center gap-2 transition"
                         >
-                            <Folder size={16} /> Quét (Scan)
+                            <Folder size={16} /> Browser
                         </button>
                     </div>
                 </div>

@@ -61,3 +61,6 @@ error_*.png
 # OS
 .DS_Store
 Thumbs.db
+
+# Temp files
+temp_*.txt
