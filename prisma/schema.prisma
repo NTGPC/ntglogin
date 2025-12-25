@@ -7,8 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./data.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // User model for admin authentication
@@ -353,6 +353,8 @@ model Log {
 model Workflow {
   id            Int                  @id @default(autoincrement())
   name          String
+  nodes         String?              // Lưu JSON dạng chuỗi cho automation builder
+  edges         String?              // Lưu JSON dạng chuỗi cho automation builder
   data          Json?
   source        String               @default("local")
   n8nWorkflowId String?              

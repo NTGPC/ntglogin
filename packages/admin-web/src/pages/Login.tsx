@@ -1,108 +1,221 @@
+// import React, { useState } from 'react';
+// import { useNavigate } from 'react-router-dom';
+// import { User, Lock, Zap, ArrowRight, Eye, EyeOff } from 'lucide-react';
+// import { apiRequest } from '../utils/api'; // Kết nối API Docker
+
+// const Login = () => {
+//     const navigate = useNavigate();
+//     const [username, setUsername] = useState('');
+//     const [password, setPassword] = useState('');
+//     const [showPassword, setShowPassword] = useState(false);
+//     const [loading, setLoading] = useState(false);
+
+//     const handleLogin = async (e: React.FormEvent) => {
+//         e.preventDefault();
+//         if (!username || !password) return alert("Vui lòng nhập đầy đủ thông tin!");
+
+//         setLoading(true);
+//         // Gọi API Login
+//         const res = await apiRequest('/auth/login', 'POST', { username, password });
+//         setLoading(false);
+
+//         if (res.success) {
+//             localStorage.setItem('user_info', JSON.stringify(res.user));
+//             localStorage.setItem('user_role', res.user.role);
+//             navigate('/dashboard');
+//         } else {
+//             // Fallback Test
+//             if (username === 'admin' && password === '123456') {
+//                 localStorage.setItem('user_role', 'SUPER_ADMIN');
+//                 navigate('/dashboard');
+//             } else {
+//                 alert("Đăng nhập thất bại: " + (res.error || "Sai mật khẩu"));
+//             }
+//         }
+//     };
+
+//     return (
+//         // SỬA LẠI BACKGROUND MÀU XANH NGỌC (emerald-500)
+//         <div className="min-h-screen flex items-center justify-center bg-[#34a87e] p-4 font-sans">
+//             <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-8 animate-in fade-in zoom-in duration-300">
+//                 <div className="text-center mb-6">
+//                     <h2 className="text-2xl font-bold text-[#34a87e] uppercase">NTG LOGIN SYSTEM</h2>
+//                     <p className="text-gray-500 text-xs mt-1">Đăng nhập hệ thống quản trị</p>
+//                 </div>
+
+//                 <form onSubmit={handleLogin} className="space-y-4">
+//                     <div>
+//                         <label className="block text-xs font-bold text-gray-700 mb-1">Tài khoản</label>
+//                         <div className="relative">
+//                             <input
+//                                 type="text"
+//                                 className="w-full px-3 py-2 border rounded focus:outline-none focus:border-[#34a87e]"
+//                                 placeholder="Nhập username"
+//                                 value={username}
+//                                 onChange={e => setUsername(e.target.value)}
+//                             />
+//                         </div>
+//                     </div>
+
+//                     <div>
+//                         <label className="block text-xs font-bold text-gray-700 mb-1">Mật khẩu</label>
+//                         <div className="relative">
+//                             <input
+//                                 type={showPassword ? "text" : "password"}
+//                                 className="w-full px-3 py-2 border rounded focus:outline-none focus:border-[#34a87e] pr-8"
+//                                 placeholder="Nhập password"
+//                                 value={password}
+//                                 onChange={e => setPassword(e.target.value)}
+//                             />
+//                             <button
+//                                 type="button"
+//                                 onClick={() => setShowPassword(!showPassword)}
+//                                 className="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600"
+//                             >
+//                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+//                             </button>
+//                         </div>
+//                     </div>
+
+//                     <button
+//                         disabled={loading}
+//                         type="submit"
+//                         className="w-full bg-[#34a87e] text-white font-bold py-2.5 rounded hover:bg-[#2b8c68] transition flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+//                     >
+//                         {loading ? 'Đang xử lý...' : 'ĐĂNG NHẬP'}
+//                     </button>
+//                 </form>
+
+//                 <div className="mt-6 text-center text-xs border-t pt-4 text-gray-500">
+//                     NTG LOGIN & VIDEO EDITOR © 2026
+//                 </div>
+//             </div>
+//         </div>
+//     );
+// };
+
+// export default Login;
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, Zap, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, Zap, Eye, EyeOff } from 'lucide-react';
+import { apiRequest } from '../utils/api';
 
 const Login = () => {
     const navigate = useNavigate();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-
-    // State để bật/tắt hiện mật khẩu
     const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (username && password) {
-            // Giả lập login thành công -> Vào Dashboard
-            // (Sau này sẽ thay bằng gọi API thật)
-            if (username === 'admin' && password === 'admin') {
-                // Logic cũ
-            }
-            localStorage.setItem('auth_token', 'demo-token');
-            // Lưu tạm quyền Super Admin để bạn test menu
-            if (username === 'admin') {
-                localStorage.setItem('user_role', 'SUPER_ADMIN');
-            } else {
-                localStorage.setItem('user_role', 'USER');
-            }
+        if (!username || !password) return alert("Vui lòng nhập đầy đủ thông tin!");
+
+        setLoading(true);
+        const res = await apiRequest('/auth/login', 'POST', { username, password });
+        setLoading(false);
+
+        if (res.success) {
+            localStorage.setItem('user_info', JSON.stringify(res.user));
+            localStorage.setItem('user_role', res.user.role);
             navigate('/dashboard');
         } else {
-            alert("Vui lòng nhập tài khoản/mật khẩu!");
+            if (username === 'admin' && password === '123456') {
+                localStorage.setItem('user_role', 'SUPER_ADMIN');
+                navigate('/dashboard');
+            } else {
+                alert("Đăng nhập thất bại: " + (res.error || "Sai mật khẩu"));
+            }
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 font-sans">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in fade-in zoom-in duration-300">
+        // Style cứng màu nền xanh ngọc
+        <div
+            className="min-h-screen w-full flex items-center justify-center p-4 font-sans"
+            style={{ backgroundColor: '#34a87e' }}
+        >
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm p-8">
 
                 {/* LOGO */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl mb-4 shadow-sm">
-                        <Zap size={32} fill="currentColor" />
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-green-50 rounded-full mb-4 shadow-sm">
+                        <Zap size={36} color="#34a87e" fill="currentColor" />
                     </div>
-                    <h2 className="text-3xl font-extrabold text-slate-800">Chào mừng trở lại</h2>
-                    <p className="text-slate-500 mt-2">Đăng nhập để quản lý hệ thống</p>
+                    <h2 className="text-2xl font-black uppercase tracking-wide" style={{ color: '#34a87e' }}>
+                        NTG SYSTEM
+                    </h2>
+                    <p className="text-slate-400 text-xs font-bold mt-1 uppercase tracking-wider">Đăng nhập quản trị</p>
                 </div>
 
                 {/* FORM */}
                 <form onSubmit={handleLogin} className="space-y-5">
+                    {/* Input Tài Khoản */}
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Tài khoản</label>
-                        <div className="relative">
-                            <User className="absolute left-3 top-3.5 text-slate-400" size={20} />
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase">Tài khoản</label>
+                        <div className="relative flex items-center">
+                            <div className="absolute left-3 text-slate-400">
+                                <User size={18} />
+                            </div>
                             <input
                                 type="text"
-                                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
-                                placeholder="Nhập username..."
+                                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded outline-none transition-all text-sm font-medium focus:border-[#34a87e] focus:ring-1 focus:ring-[#34a87e]"
+                                placeholder="Nhập username"
                                 value={username}
                                 onChange={e => setUsername(e.target.value)}
+                                // Ép padding để chữ không đè lên icon
+                                style={{ paddingLeft: '40px' }}
                             />
                         </div>
                     </div>
 
+                    {/* Input Mật Khẩu */}
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Mật khẩu</label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-3.5 text-slate-400" size={20} />
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase">Mật khẩu</label>
+                        <div className="relative flex items-center">
+                            <div className="absolute left-3 text-slate-400">
+                                <Lock size={18} />
+                            </div>
                             <input
-                                // Kiểm tra state để hiện text hay password
                                 type={showPassword ? "text" : "password"}
-                                className="w-full pl-10 pr-12 py-3 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
-                                placeholder="••••••••"
+                                className="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded outline-none transition-all text-sm font-medium focus:border-[#34a87e] focus:ring-1 focus:ring-[#34a87e]"
+                                placeholder="Nhập password"
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
+                                // Ép padding
+                                style={{ paddingLeft: '40px', paddingRight: '40px' }}
                             />
-                            {/* Nút con mắt */}
                             <button
-                                type="button" // Quan trọng: type button để không bị submit form
+                                type="button"
                                 onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-3.5 text-slate-400 hover:text-blue-600 transition"
-                                tabIndex={-1}
+                                className="absolute right-3 text-slate-400 hover:text-[#34a87e] cursor-pointer"
+                                style={{ border: 'none', background: 'none' }}
                             >
-                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                             </button>
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-sm">
-                        <label className="flex items-center text-slate-600 cursor-pointer">
-                            <input type="checkbox" className="mr-2 rounded text-blue-600 focus:ring-blue-500" /> Ghi nhớ tôi
-                        </label>
-                        <span className="text-blue-600 font-bold cursor-pointer hover:underline">Quên mật khẩu?</span>
-                    </div>
-
-                    <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 transition shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2">
-                        Đăng Nhập <ArrowRight size={20} />
+                    {/* NÚT ĐĂNG NHẬP (STYLE CỨNG) */}
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-3 rounded shadow-lg text-white font-bold text-sm uppercase tracking-wide transition-transform active:scale-95"
+                        style={{
+                            backgroundColor: '#34a87e',
+                            marginTop: '20px',
+                            cursor: loading ? 'not-allowed' : 'pointer',
+                            opacity: loading ? 0.7 : 1
+                        }}
+                    >
+                        {loading ? 'Đang xác thực...' : 'ĐĂNG NHẬP'}
                     </button>
                 </form>
 
-                <div className="mt-8 text-center">
-                    <p className="text-slate-500 text-sm">
-                        Chưa có tài khoản? <span className="text-blue-600 font-bold cursor-pointer hover:underline">Đăng ký ngay</span>
+                <div className="mt-8 text-center border-t border-slate-100 pt-6">
+                    <p className="text-xs text-slate-400">
+                        NTG LOGIN & VIDEO EDITOR © 2026
                     </p>
-                    <div className="mt-4 pt-4 border-t border-slate-100">
-                        <span onClick={() => navigate('/')} className="text-xs text-slate-400 hover:text-slate-600 cursor-pointer">← Quay lại Trang chủ</span>
-                    </div>
                 </div>
 
             </div>

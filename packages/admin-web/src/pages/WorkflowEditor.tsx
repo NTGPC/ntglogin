@@ -17,8 +17,8 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import { workflowsApi } from '@/lib/workflows'
 import { useWorkflowStore, WorkflowNode } from '@/store/workflowStore'
-import { 
-  Save, Settings, Trash2, ArrowLeft, Search, 
+import {
+  Save, Settings, Trash2, ArrowLeft, Search,
   Globe, MousePointer, Type, Camera, XCircle, Clock,
   GripVertical, Play, Download, CheckCircle, AlertCircle, GitMerge
 } from 'lucide-react'
@@ -123,7 +123,7 @@ export default function WorkflowEditor() {
     } catch (err: any) {
       console.error('Failed to save workflow:', err)
       let errorMessage = 'Failed to save workflow'
-      
+
       if (err.message) {
         errorMessage = err.message
       } else if (err.response?.data?.message) {
@@ -133,22 +133,22 @@ export default function WorkflowEditor() {
       } else if (typeof err === 'string') {
         errorMessage = err
       }
-      
+
       // Special handling for network errors
       if (err.code === 'ECONNREFUSED' || err.message?.includes('Network Error') || err.message?.includes('Cannot connect')) {
         errorMessage = `Cannot connect to backend server.\n\nPlease make sure:\n1. Backend server is running on http://127.0.0.1:3000\n2. Python backend: uvicorn api.main:app --reload --port 3000\n3. Or Node.js backend: npm run dev (in src/ directory)`
       }
-      
+
       // Special handling for 403 Forbidden (authentication issue)
       if (err.response?.status === 403) {
         errorMessage = `Authentication failed (403 Forbidden).\n\nPlease check:\n1. Open browser console (F12) to see auto-login status\n2. Backend log in terminal to see if login endpoint works\n3. Database may need user 'admin' - check backend logs\n4. Try refreshing the page to trigger auto-login again`
       }
-      
+
       // Special handling for 500 Internal Server Error
       if (err.response?.status === 500) {
         errorMessage = `Backend server error (500).\n\nPlease check:\n1. Backend log in terminal for detailed error\n2. Database connection may be broken\n3. Tables may not exist - check if migrations ran\n4. Check backend terminal for Python traceback`
       }
-      
+
       alert(errorMessage)
     } finally {
       setLoading(false)
@@ -180,7 +180,7 @@ export default function WorkflowEditor() {
     }
   }, [id, isNew])
 
-   useEffect(() => {
+  useEffect(() => {
     if (isNew) {
       setNodes([])
       setEdges([])
@@ -214,13 +214,13 @@ export default function WorkflowEditor() {
     event.preventDefault()
     const nodeData = JSON.parse(event.dataTransfer.getData('application/reactflow'))
     const reactFlowBounds = (event.target as Element).closest('.react-flow')?.getBoundingClientRect()
-    
+
     if (reactFlowBounds) {
       const position = {
         x: event.clientX - reactFlowBounds.left,
         y: event.clientY - reactFlowBounds.top,
       }
-      
+
       const newNode: WorkflowNode = {
         id: `node-${Date.now()}`,
         type: nodeData.nodeType,
@@ -243,7 +243,7 @@ export default function WorkflowEditor() {
   const handleValidate = () => {
     const issues = validateWorkflow(nodes as any, edges)
     setValidationIssues(issues)
-    
+
     if (issues.length === 0) {
       alert('✓ Workflow is valid!')
     } else {
@@ -262,14 +262,14 @@ export default function WorkflowEditor() {
     try {
       // Save current state first
       await handleSave()
-      
+
       // Call test API
       const result = await workflowsApi.test(Number(id))
-      
+
       if (result.success) {
         alert(`✓ Test passed!\n\n${result.message}\n\nStats:\n- Nodes: ${result.stats.nodes}\n- Edges: ${result.stats.edges}\n- Start nodes: ${result.stats.startNodes}\n- End nodes: ${result.stats.endNodes}`)
       } else {
-        const issuesText = result.issues.length > 0 
+        const issuesText = result.issues.length > 0
           ? `\n\nIssues:\n${result.issues.map((i: string) => `- ${i}`).join('\n')}`
           : ''
         alert(`⚠ Test found issues:\n\n${result.message}${issuesText}`)
@@ -301,7 +301,7 @@ export default function WorkflowEditor() {
 
   const filteredActions = ACTION_TYPES.filter((action) => {
     const matchesSearch = action.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         action.description.toLowerCase().includes(searchQuery.toLowerCase())
+      action.description.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesCategory = !selectedCategory || action.category === selectedCategory
     return matchesSearch && matchesCategory
   })
@@ -372,7 +372,7 @@ export default function WorkflowEditor() {
                 />
               </div>
             </div>
-            
+
             {/* Categories */}
             <div className="border-b px-4 py-2 flex gap-1 overflow-x-auto">
               {NODE_CATEGORIES.map((cat) => {
@@ -381,9 +381,8 @@ export default function WorkflowEditor() {
                   <button
                     key={cat.id}
                     onClick={() => setSelectedCategory(selectedCategory === cat.id ? null : cat.id)}
-                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs whitespace-nowrap ${
-                      selectedCategory === cat.id ? cat.color : 'hover:bg-accent'
-                    }`}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-md text-xs whitespace-nowrap ${selectedCategory === cat.id ? cat.color : 'hover:bg-accent'
+                      }`}
                   >
                     <Icon className="w-3 h-3" />
                     {cat.label}
@@ -440,7 +439,7 @@ export default function WorkflowEditor() {
               <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
               <Controls />
               <MiniMap />
-              
+
               <Panel position="top-right" className="bg-background/90 backdrop-blur-sm border rounded-lg shadow p-2">
                 <div className="text-xs text-muted-foreground">
                   {nodes.length} nodes · {edges.length} connections

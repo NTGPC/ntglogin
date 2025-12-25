@@ -121,7 +121,7 @@ export default function Proxies() {
         type: data.type,
         active: data.active ?? true,
       }
-      
+
       // Only include username/password if provided (send raw, backend will encrypt)
       if (data.username) payload.username = data.username
       if (changePassword && data.password) payload.password = data.password
@@ -136,7 +136,7 @@ export default function Proxies() {
         try {
           const updatedProxy = await api.checkProxy(created.id)
           setProxies(prev => prev.map(p => p.id === created.id ? updatedProxy : p))
-        } catch {}
+        } catch { }
       }
       setDialogOpen(false)
       setEditingProxy(null)
@@ -147,7 +147,7 @@ export default function Proxies() {
     } catch (error: any) {
       console.error('Failed to save proxy:', error)
       let errorMessage = 'Failed to save proxy'
-      
+
       // Provide more specific error messages
       if (error?.response?.data?.message) {
         errorMessage = error.response.data.message
@@ -156,7 +156,7 @@ export default function Proxies() {
       } else if (error?.code === 'ECONNREFUSED' || error?.message?.includes('Network Error')) {
         errorMessage = 'Cannot connect to backend server. Please ensure backend is running on port 3000.'
       }
-      
+
       setFeedback({ type: 'error', message: errorMessage })
       setTimeout(() => setFeedback(null), 5000)
     }
@@ -184,7 +184,7 @@ export default function Proxies() {
     try {
       // Gọi API check (Server sẽ check và lưu DB)
       const res = await api.checkProxy(id);
-      
+
       // Server trả về proxy với status mới (Live/Die) -> Cập nhật vào List
       const updatedProxy = res;
       setProxies(prev => prev.map(p => p.id === id ? updatedProxy : p));
@@ -312,71 +312,71 @@ export default function Proxies() {
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center">
-                  Loading...
-                </TableCell>
-              </TableRow>
-            ) : paginatedProxies.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center">
-                  No proxies found
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginatedProxies.map((proxy) => (
-                <TableRow key={proxy.id}>
-                  <TableCell>{proxy.id}</TableCell>
-                  <TableCell className="font-medium">{proxy.host}:{proxy.port}</TableCell>
-                  <TableCell>{proxy.type}</TableCell>
-                  <TableCell>{proxy.username || '-'}</TableCell>
-                  <TableCell>
-                    {renderStatus(proxy.status)}
-                  </TableCell>
-                  <TableCell>
-                    {new Date(proxy.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditingProxy(proxy)
-                          setDialogOpen(true)
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleCheckProxy(proxy.id)}
-                        title="Check live"
-                        disabled={loadingIds.includes(proxy.id)}
-                      >
-                        {loadingIds.includes(proxy.id) ? (
-                          <span className="animate-spin">⏳</span>
-                        ) : (
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(proxy.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center">
+                    Loading...
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : paginatedProxies.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center">
+                    No proxies found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedProxies.map((proxy) => (
+                  <TableRow key={proxy.id}>
+                    <TableCell>{proxy.id}</TableCell>
+                    <TableCell className="font-medium">{proxy.host}:{proxy.port}</TableCell>
+                    <TableCell>{proxy.type}</TableCell>
+                    <TableCell>{proxy.username || '-'}</TableCell>
+                    <TableCell>
+                      {renderStatus(proxy.status)}
+                    </TableCell>
+                    <TableCell>
+                      {new Date(proxy.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setEditingProxy(proxy)
+                            setDialogOpen(true)
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleCheckProxy(proxy.id)}
+                          title="Check live"
+                          disabled={loadingIds.includes(proxy.id)}
+                        >
+                          {loadingIds.includes(proxy.id) ? (
+                            <span className="animate-spin">⏳</span>
+                          ) : (
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(proxy.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
 

@@ -10,14 +10,14 @@ import Home from './pages/web/Home';
 import Pricing from './pages/web/Pricing';
 import Download from './pages/web/Download';
 
-// App Pages (Admin Tools)
+// App Pages
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import EditRatio from './pages/EditRatio';
 import UserManagement from './pages/UserManagement';
-import AutomationBuilder from './pages/AutomationBuilder';
+import AutomationBuilder from './pages/AutomationBuilder'; // Bản full screen
 
-// Import Các Trang Cũ (Đã có sẵn trong folder pages)
+// Import Các Chức Năng Cũ
 import Profiles from './pages/Profiles';
 import Proxies from './pages/Proxies';
 import Fingerprints from './pages/Fingerprints';
@@ -29,9 +29,8 @@ import Workflows from './pages/Workflows';
 import TwoFAPage from './pages/TwoFAPage';
 import SocialAnalyticsPage from './pages/SocialAnalyticsPage';
 import VideoEditorPage from './pages/VideoEditorPage';
-import WorkflowEditor from './pages/WorkflowEditor';
 
-// Component bảo vệ (Tạm thời cho qua để test)
+// Component bảo vệ
 const PrivateRoute = ({ children }: { children: any }) => {
   return children;
 };
@@ -50,11 +49,11 @@ function App() {
         {/* 2. LOGIN */}
         <Route path="/login" element={<Login />} />
 
-        {/* 3. ADMIN DASHBOARD */}
+        {/* 3. ADMIN DASHBOARD (CÓ SIDEBAR) */}
         <Route path="/dashboard" element={<PrivateRoute><AdminLayout /></PrivateRoute>}>
           <Route index element={<Dashboard />} />
 
-          {/* Các chức năng cũ */}
+          {/* Các chức năng bảng */}
           <Route path="profiles" element={<Profiles />} />
           <Route path="proxies" element={<Proxies />} />
           <Route path="fingerprints" element={<Fingerprints />} />
@@ -63,19 +62,20 @@ function App() {
           <Route path="jobs" element={<Jobs />} />
           <Route path="executions" element={<Executions />} />
           <Route path="workflows" element={<Workflows />} />
-          <Route path="workflows/:id" element={<WorkflowEditor />} />
 
-          {/* Các tool đặc biệt */}
           <Route path="2fa" element={<TwoFAPage />} />
           <Route path="social-analytics" element={<SocialAnalyticsPage />} />
           <Route path="video-editor" element={<VideoEditorPage />} />
-
-          {/* Các chức năng mới */}
           <Route path="edit-ratio" element={<EditRatio />} />
           <Route path="users" element={<UserManagement />} />
-          <Route path="automation/:profileId?" element={<AutomationBuilder />} />
         </Route>
 
+        {/* --- 4. WORKFLOW EDITOR FULL SCREEN (KHÔNG CÓ SIDEBAR) --- */}
+        {/* Route này nằm ngoài AdminLayout để nó bung full màn hình */}
+        <Route path="/dashboard/automation/:profileId?" element={<PrivateRoute><AutomationBuilder /></PrivateRoute>} />
+        <Route path="/dashboard/workflows/:id" element={<PrivateRoute><AutomationBuilder /></PrivateRoute>} />
+
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </HashRouter>
